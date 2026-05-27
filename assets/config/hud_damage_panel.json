@@ -1,0 +1,9 @@
+{
+  "trend_up_delta": 120.0,
+  "trend_down_delta": 35.0,
+  "trend_window_sec": 10.0,
+  "trend_keep_sec": 12.0,
+  "color_up": [0.56, 1.0, 0.72, 1.0],
+  "color_flat": [1.0, 0.84, 0.44, 1.0],
+  "color_down": [1.0, 0.46, 0.46, 1.0]
+}

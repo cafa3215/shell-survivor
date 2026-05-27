@@ -1,0 +1,18 @@
+{
+  "weekly_hours": 25,
+  "focus": "Core gameplay + stable delivery",
+  "candidates": [
+    {
+      "name": "beehave",
+      "repo": "https://github.com/bitbrain/beehave"
+    },
+    {
+      "name": "limboai",
+      "repo": "https://github.com/limbonaut/limboai"
+    },
+    {
+      "name": "savemadeeasy",
+      "repo": "https://github.com/AdamKormos/SaveMadeEasy"
+    }
+  ]
+}

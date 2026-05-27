@@ -1,0 +1,125 @@
+{
+  "weapons": {
+    "kunai": {
+      "name": "苦无",
+      "carrier_name": "磁轨裂刃仓",
+      "theme": "neutral",
+      "fire_mode": "直线连射 / 穿透",
+      "hit_fx": "细刃穿刺闪",
+      "desc": "高频直射，重在稳定压血。",
+      "rhythm": "高频短间隔",
+      "projectile_style": "窄体高速针形弹道",
+      "texture": "res://assets/game_pack/textures/weapon_cards/kunai_card.png"
+    },
+    "quantum_ball": {
+      "name": "量子球",
+      "carrier_name": "相位球笼",
+      "theme": "electric",
+      "fire_mode": "弹跳散射 / 反弹",
+      "hit_fx": "量子回弹晕光",
+      "desc": "弹跳覆盖广，适合清杂与控场。",
+      "rhythm": "中频持续",
+      "projectile_style": "球体反弹轨迹",
+      "texture": "res://assets/game_pack/textures/weapon_cards/quantum_ball_card.png"
+    },
+    "lightning": {
+      "name": "雷电发射器",
+      "carrier_name": "弧叉发射器",
+      "theme": "electric",
+      "fire_mode": "链式跳电",
+      "hit_fx": "分叉电弧爆",
+      "desc": "连锁打击多目标，爆发清线。",
+      "rhythm": "脉冲连锁",
+      "projectile_style": "瞬发锁链电弧",
+      "texture": "res://assets/game_pack/textures/weapon_cards/lightning_card.png"
+    },
+    "rocket": {
+      "name": "火箭发射器",
+      "carrier_name": "压能火箭膛",
+      "theme": "explosive",
+      "fire_mode": "蓄压爆射",
+      "hit_fx": "同心冲击环",
+      "desc": "单发重火力，区域清场核心。",
+      "rhythm": "低频重击",
+      "projectile_style": "粗体拖尾爆弹",
+      "texture": "res://assets/game_pack/textures/weapon_cards/rocket_card.png"
+    },
+    "molotov": {
+      "name": "燃烧瓶",
+      "carrier_name": "热焰燃剂囊",
+      "theme": "explosive",
+      "fire_mode": "抛物投掷",
+      "hit_fx": "落地灼烧印",
+      "desc": "持续灼烧，压制路径与追兵。",
+      "rhythm": "中低频抛投",
+      "projectile_style": "抛物线燃烧瓶",
+      "texture": "res://assets/game_pack/textures/weapon_cards/molotov_card.png"
+    },
+    "guardian": {
+      "name": "守卫者",
+      "carrier_name": "轨卫枢纽",
+      "theme": "neutral",
+      "fire_mode": "环绕切割",
+      "hit_fx": "击退脉冲圈",
+      "desc": "近身防线，削弱贴脸风险。",
+      "rhythm": "持续环绕",
+      "projectile_style": "环体周向切割",
+      "texture": "res://assets/game_pack/textures/weapon_cards/guardian_card.png"
+    },
+    "drone_ab": {
+      "name": "AB无人机",
+      "carrier_name": "双联中继核",
+      "theme": "electric",
+      "fire_mode": "双机交替射束",
+      "hit_fx": "双点同步火花",
+      "desc": "持续压制，补足机动输出。",
+      "rhythm": "交替点射",
+      "projectile_style": "双源并行射线",
+      "texture": "res://assets/game_pack/textures/weapon_cards/drone_ab_card.png"
+    },
+    "boomerang": {
+      "name": "回旋镖",
+      "carrier_name": "返弧导轨架",
+      "theme": "frost",
+      "fire_mode": "往返曲线切割",
+      "hit_fx": "回返斩波纹",
+      "desc": "双程命中，走位收益高。",
+      "rhythm": "双程往返",
+      "projectile_style": "弧形回返弹道",
+      "texture": "res://assets/game_pack/textures/weapon_cards/boomerang_card.png"
+    },
+    "frost_aura": {
+      "name": "冰霜领域",
+      "carrier_name": "寒域共振器",
+      "theme": "frost",
+      "fire_mode": "范围持续场",
+      "hit_fx": "冻结裂纹 + 寒雾",
+      "desc": "减速控场，稳住高压波次。",
+      "rhythm": "持续场频率",
+      "projectile_style": "环形扩散场",
+      "texture": "res://assets/game_pack/textures/weapon_cards/frost_aura_card.png"
+    },
+    "stun_mine": {
+      "name": "眩晕地雷",
+      "carrier_name": "脉冲陷阱核",
+      "theme": "explosive",
+      "fire_mode": "布设触发",
+      "hit_fx": "径向眩晕波",
+      "desc": "卡点反打，制造安全窗口。",
+      "rhythm": "触发爆发",
+      "projectile_style": "定点触发脉冲",
+      "texture": "res://assets/game_pack/textures/weapon_cards/stun_mine_card.png"
+    },
+    "heal_aura": {
+      "name": "治疗光环",
+      "carrier_name": "生机回路环",
+      "theme": "heal",
+      "fire_mode": "周期脉冲治疗",
+      "hit_fx": "净化升腾波",
+      "desc": "续航核心，容错率提升。",
+      "rhythm": "周期回响",
+      "projectile_style": "柔和环波扩散",
+      "texture": "res://assets/game_pack/textures/weapon_cards/heal_aura_card.png"
+    }
+  }
+}

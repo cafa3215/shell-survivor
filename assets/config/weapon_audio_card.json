@@ -1,0 +1,34 @@
+{
+  "fallback": {
+    "quantum_hex": "lightning",
+    "rocket_secondary": "explosion"
+  },
+  "profile": {
+    "kunai_finish": {
+      "vol_db": -3.4,
+      "cooldown": 0.022,
+      "layer": {
+        "chance": 0.46
+      }
+    },
+    "rocket_explode": {
+      "vol_db": -0.6,
+      "cooldown": 0.038,
+      "layer": {
+        "chance": 0.82,
+        "vol_db": -9.0
+      }
+    },
+    "lightning_jump": {
+      "vol_db": -7.6,
+      "cooldown": 0.021
+    },
+    "quantum_holy": {
+      "vol_db": -3.6,
+      "cooldown": 0.058,
+      "layer": {
+        "chance": 0.32
+      }
+    }
+  }
+}

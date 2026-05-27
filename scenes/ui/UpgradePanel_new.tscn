@@ -1,0 +1,129 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/UpgradePanel.gd" id="1"]
+[ext_resource type="Theme" path="res://assets/themes/cyber_theme.tres" id="2"]
+
+[node name="UpgradePanel" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+mouse_filter = 0
+theme = ExtResource("2")
+script = ExtResource("1")
+theme_type_variation = &"PanelPopup"
+
+[node name="DimBg" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_type_variation = &"PanelPopup"
+
+[node name="Background" type="Panel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -180.0
+offset_right = 420.0
+offset_bottom = 180.0
+theme_type_variation = &"PanelCard"
+
+[node name="TitleContainer" type="HBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -155.0
+offset_right = 360.0
+offset_bottom = -115.0
+
+[node name="TitleIcon" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -370.0
+offset_top = -148.0
+offset_right = -320.0
+offset_bottom = -122.0
+text = "⚡"
+ theme_type_variation = &"LabelMeta"
+
+[node name="Title" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -155.0
+offset_right = 300.0
+offset_bottom = -115.0
+text = "变异 · 三选一"
+ theme_type_variation = &"LabelTitle"
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -118.0
+offset_right = 250.0
+offset_bottom = -90.0
+text = "武器模组 / 被动 / 融合 — 择一强化（细胞式构筑）"
+ theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="CardRow" type="HBoxContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -380.0
+offset_top = -80.0
+offset_right = 380.0
+offset_bottom = 70.0
+
+[node name="Card1" type="Button" parent="CardRow"]
+custom_minimum_size = Vector2(220, 145)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 0
+ theme_type_variation = &"CardNormal"
+
+[node name="Card2" type="Button" parent="CardRow"]
+custom_minimum_size = Vector2(220, 145)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 0
+ theme_type_variation = &"CardNormal"
+
+[node name="Card3" type="Button" parent="CardRow"]
+custom_minimum_size = Vector2(220, 145)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 0
+ theme_type_variation = &"CardNormal"
+
+[node name="BottomHint" type="Label" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = 95.0
+offset_right = 200.0
+offset_bottom = 115.0
+text = "按 1/2/3 或点击选择"
+ theme_type_variation = &"LabelMeta"
+horizontal_alignment = 1

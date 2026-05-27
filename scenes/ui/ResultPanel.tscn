@@ -1,0 +1,228 @@
+[gd_scene load_steps=4 format=3 uid="uid://result_panel_001"]
+
+[ext_resource type="Script" path="res://scripts/ui/ResultPanel.gd" id="10"]
+[ext_resource type="Theme" path="res://assets/themes/cyber_theme.tres" id="11"]
+
+[node name="ResultPanel" type="Control"]
+script = ExtResource("10")
+theme = ExtResource("11")
+theme_type_variation = &"PanelPopup"
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="DimBg" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_type_variation = &"PanelPopup"
+
+[node name="MainPanel" type="Panel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -350.0
+offset_top = -290.0
+offset_right = 350.0
+offset_bottom = 290.0
+theme_type_variation = &"PanelPopup"
+
+[node name="TitleContainer" type="HBoxContainer" parent="MainPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -700.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 80.0
+alignment = 1
+
+[node name="TitleIcon" type="Label" parent="MainPanel/TitleContainer"]
+text = "🏆"
+theme_type_variation = &"LabelMeta"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TitleLabel" type="Label" parent="MainPanel/TitleContainer"]
+text = "胜利"
+theme_type_variation = &"LabelTitle"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StatsContainer" type="HBoxContainer" parent="MainPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -680.0
+offset_top = 95.0
+offset_right = -20.0
+offset_bottom = 400.0
+
+[node name="LeftStats" type="VBoxContainer" parent="MainPanel/StatsContainer"]
+size_flags_horizontal = 3
+
+[node name="TimePanel" type="Panel" parent="MainPanel/StatsContainer/LeftStats"]
+custom_minimum_size = Vector2(0, 80)
+size_flags_horizontal = 3
+theme_type_variation = &"PanelCard"
+
+[node name="TimeLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/TimePanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -200.0
+offset_top = 5.0
+offset_right = -10.0
+offset_bottom = 40.0
+text = "00:00"
+theme_type_variation = &"LabelValue"
+horizontal_alignment = 1
+
+[node name="TimeSubLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/TimePanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -200.0
+offset_top = 45.0
+offset_right = -10.0
+offset_bottom = 70.0
+text = "生存时间"
+theme_type_variation = &"LabelMeta"
+horizontal_alignment = 1
+
+[node name="KillPanel" type="Panel" parent="MainPanel/StatsContainer/LeftStats"]
+custom_minimum_size = Vector2(0, 70)
+size_flags_horizontal = 3
+theme_type_variation = &"PanelCard"
+
+[node name="KillLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/KillPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -180.0
+offset_top = 8.0
+offset_right = -10.0
+offset_bottom = 38.0
+text = "0"
+theme_type_variation = &"LabelValue"
+horizontal_alignment = 1
+
+[node name="KillSubLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/KillPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -180.0
+offset_top = 40.0
+offset_right = -10.0
+offset_bottom = 62.0
+text = "击杀敌人  每分钟击杀: 0.0"
+theme_type_variation = &"LabelMeta"
+horizontal_alignment = 1
+
+[node name="DamagePanel" type="Panel" parent="MainPanel/StatsContainer/LeftStats"]
+custom_minimum_size = Vector2(0, 70)
+size_flags_horizontal = 3
+theme_type_variation = &"PanelCard"
+
+[node name="DamageLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/DamagePanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -180.0
+offset_top = 8.0
+offset_right = -10.0
+offset_bottom = 38.0
+text = "0"
+theme_type_variation = &"LabelValue"
+horizontal_alignment = 1
+
+[node name="DamageSubLabel" type="Label" parent="MainPanel/StatsContainer/LeftStats/DamagePanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -180.0
+offset_top = 40.0
+offset_right = -10.0
+offset_bottom = 62.0
+text = "总伤害"
+theme_type_variation = &"LabelMeta"
+horizontal_alignment = 1
+
+[node name="RightStats" type="VBoxContainer" parent="MainPanel/StatsContainer"]
+size_flags_horizontal = 2
+size_flags_stretch_ratio = 1.5
+
+[node name="BossInfo" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "首领: 未出现"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="TopKill" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "击杀最多: -"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="BuildLine" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "构筑推荐: -"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="DamageSource" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "伤害来源: -"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="FusionInfo" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "融合次数: 0  融合伤害: 0%"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="DiagnosisLine" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+text = "诊断: 构筑均衡"
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+
+[node name="RecapLine" type="Label" parent="MainPanel/StatsContainer/RightStats"]
+visible = false
+text = ""
+theme_type_variation = &"LabelBody"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="ButtonContainer" type="HBoxContainer" parent="MainPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -700.0
+offset_top = 420.0
+offset_right = -20.0
+offset_bottom = 480.0
+alignment = 1
+
+[node name="RestartButton" type="Button" parent="MainPanel/ButtonContainer"]
+custom_minimum_size = Vector2(180, 50)
+text = "🔄 重新开始"
+size_flags_horizontal = 3
+theme_type_variation = &"ButtonSecondary"
+
+[node name="MenuButton" type="Button" parent="MainPanel/ButtonContainer"]
+custom_minimum_size = Vector2(180, 50)
+text = "🏠 主菜单"
+size_flags_horizontal = 3
+theme_type_variation = &"ButtonDanger"
+
+[node name="BottomHint" type="Label" parent="MainPanel"]
+anchors_preset = 10
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -300.0
+offset_top = 495.0
+offset_right = -20.0
+offset_bottom = 515.0
+text = "按重开键重新开始  |  按菜单键返回主菜单"
+theme_type_variation = &"LabelMeta"
+horizontal_alignment = 2

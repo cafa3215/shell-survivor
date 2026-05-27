@@ -1,0 +1,59 @@
+{
+  "weapons": {
+    "kunai": {
+      "model_glb": "res://assets/game_pack/models/weapons/kunai.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\kunai.png",
+      "theme": "neutral"
+    },
+    "quantum_ball": {
+      "model_glb": "res://assets/game_pack/models/weapons/quantum_ball.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\quantum_ball.png",
+      "theme": "electric"
+    },
+    "lightning": {
+      "model_glb": "res://assets/game_pack/models/weapons/lightning.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\lightning.png",
+      "theme": "electric"
+    },
+    "rocket": {
+      "model_glb": "res://assets/game_pack/models/weapons/rocket.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\rocket.png",
+      "theme": "explosive"
+    },
+    "molotov": {
+      "model_glb": "res://assets/game_pack/models/weapons/molotov.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\molotov.png",
+      "theme": "explosive"
+    },
+    "guardian": {
+      "model_glb": "res://assets/game_pack/models/weapons/guardian.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\guardian.png",
+      "theme": "neutral"
+    },
+    "drone_ab": {
+      "model_glb": "res://assets/game_pack/models/weapons/drone_ab.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\drone_ab.png",
+      "theme": "electric"
+    },
+    "boomerang": {
+      "model_glb": "res://assets/game_pack/models/weapons/boomerang.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\boomerang.png",
+      "theme": "frost"
+    },
+    "frost_aura": {
+      "model_glb": "res://assets/game_pack/models/weapons/frost_aura.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\frost_aura.png",
+      "theme": "frost"
+    },
+    "stun_mine": {
+      "model_glb": "res://assets/game_pack/models/weapons/stun_mine.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\stun_mine.png",
+      "theme": "explosive"
+    },
+    "heal_aura": {
+      "model_glb": "res://assets/game_pack/models/weapons/heal_aura.glb",
+      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\heal_aura.png",
+      "theme": "heal"
+    }
+  }
+}

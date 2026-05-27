@@ -1,0 +1,18 @@
+{
+  "kunai_finish": {
+    "intensity_mul": 1.1,
+    "sfx_event": "kunai_finish"
+  },
+  "rocket_secondary": {
+    "force_hit_type": "kill",
+    "intensity_mul": 1.05
+  },
+  "lightning_jump": {
+    "preset": "volt_soft",
+    "intensity_mul": 0.92
+  },
+  "quantum_holy": {
+    "preset": "arcane_burst",
+    "intensity_mul": 1.18
+  }
+}

@@ -1,0 +1,48 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/modules/SkillsWhitebox.gd" id="1"]
+
+[node name="SkillsWhitebox" type="Node2D"]
+script = ExtResource("1")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="PanelContainer" parent="CanvasLayer"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 980.0
+offset_bottom = 320.0
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/Panel"]
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="CanvasLayer/Panel/VBox"]
+text = "技能白盒试验场"
+autowrap_mode = 3
+
+[node name="Desc" type="Label" parent="CanvasLayer/Panel/VBox"]
+text = "用于第3周白盒验证：固定场景 + 固定刷怪模式（教学/组合/考核），配合界面批次/快照对比来验证手感与可读性。"
+autowrap_mode = 3
+
+[node name="Buttons" type="HBoxContainer" parent="CanvasLayer/Panel/VBox"]
+theme_override_constants/separation = 8
+
+[node name="BtnTutorial" type="Button" parent="CanvasLayer/Panel/VBox/Buttons"]
+text = "教学：单体"
+
+[node name="BtnCombo" type="Button" parent="CanvasLayer/Panel/VBox/Buttons"]
+text = "组合：小群"
+
+[node name="BtnExam" type="Button" parent="CanvasLayer/Panel/VBox/Buttons"]
+text = "考核：30秒刷怪"
+
+[node name="BtnReset" type="Button" parent="CanvasLayer/Panel/VBox/Buttons"]
+text = "重置战场"
+
+[node name="BtnBack" type="Button" parent="CanvasLayer/Panel/VBox/Buttons"]
+text = "返回菜单"
+
+[node name="Status" type="Label" parent="CanvasLayer/Panel/VBox"]
+text = "状态：准备中…"
+autowrap_mode = 3
+

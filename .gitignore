@@ -1,0 +1,39 @@
+.godot/
+.import/
+.mono/
+
+# Exports (Godot default)
+export.cfg
+export_presets.cfg
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Logs / caches
+*.log
+
+# Python helper script caches (repo includes validate_exp_log.py)
+__pycache__/
+*.pyc
+
+# Local transient files
+tmp/
+*.tmp
+*.bak
+*.orig
+
+# IDE / agent tooling (not part of the game)
+.cursor/
+
+# Bundled reference repos (keep outside game source tree)
+agency-agents-main/
+superpowers-main/
+andrej-karpathy-skills-main/
+
+# Unrelated scratch folder
+1/
+

@@ -1,0 +1,29 @@
+{
+  "preset": "normal",
+  "profiles": {
+    "soft": {
+      "spark_45_orb_count": 4,
+      "spark_45_orb_value": 2,
+      "spark_45_radius": 105.0,
+      "spark_140_orb_count": 5,
+      "spark_140_orb_value": 2,
+      "spark_140_radius": 120.0
+    },
+    "normal": {
+      "spark_45_orb_count": 5,
+      "spark_45_orb_value": 2,
+      "spark_45_radius": 110.0,
+      "spark_140_orb_count": 6,
+      "spark_140_orb_value": 3,
+      "spark_140_radius": 130.0
+    },
+    "hardcore": {
+      "spark_45_orb_count": 7,
+      "spark_45_orb_value": 3,
+      "spark_45_radius": 125.0,
+      "spark_140_orb_count": 8,
+      "spark_140_orb_value": 4,
+      "spark_140_radius": 140.0
+    }
+  }
+}

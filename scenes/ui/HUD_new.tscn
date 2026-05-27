@@ -1,0 +1,405 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/HUD.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/ThreatEdgeIndicators.gd" id="3"]
+[ext_resource type="Theme" path="res://assets/themes/cyber_theme.tres" id="4"]
+
+[node name="HUD" type="CanvasLayer"]
+layer = 18
+script = ExtResource("1")
+theme = ExtResource("4")
+theme_type_variation = &"PanelScreen"
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_type_variation = &"PanelScreen"
+
+[node name="TopBar" type="PanelContainer" parent="Root"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 540.0
+offset_bottom = 118.0
+theme_type_variation = &"PanelScreen"
+
+[node name="VBox" type="VBoxContainer" parent="Root/TopBar"]
+theme_type_variation = &"PanelCard"
+
+[node name="Row1" type="HBoxContainer" parent="Root/TopBar/VBox"]
+theme_type_variation = &"PanelCard"
+
+[node name="HpIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "❤"
+theme_type_variation = &"LabelMeta"
+vertical_alignment = 1
+
+[node name="HpLabel" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "100/100"
+theme_type_variation = &"LabelValue"
+vertical_alignment = 1
+
+[node name="Spacer1" type="Control" parent="Root/TopBar/VBox/Row1"]
+custom_minimum_size = Vector2(20, 0)
+
+[node name="LvIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "★"
+theme_type_variation = &"LabelMeta"
+vertical_alignment = 1
+
+[node name="LevelLabel" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "等级.1"
+theme_type_variation = &"LabelValue"
+vertical_alignment = 1
+
+[node name="Spacer2" type="Control" parent="Root/TopBar/VBox/Row1"]
+custom_minimum_size = Vector2(20, 0)
+
+[node name="TimeIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "⏱"
+theme_type_variation = &"LabelMeta"
+vertical_alignment = 1
+
+[node name="TimeLabel" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "00:00"
+theme_type_variation = &"LabelValue"
+vertical_alignment = 1
+
+[node name="Spacer3" type="Control" parent="Root/TopBar/VBox/Row1"]
+size_flags_horizontal = 3
+
+[node name="FpsLabel" type="Label" parent="Root/TopBar/VBox/Row1"]
+text = "帧率 60"
+theme_type_variation = &"LabelMeta"
+vertical_alignment = 1
+
+[node name="HpBarRow" type="HBoxContainer" parent="Root/TopBar/VBox"]
+theme_type_variation = &"PanelCard"
+
+[node name="HpBarBg" type="ProgressBar" parent="Root/TopBar/VBox/HpBarRow"]
+custom_minimum_size = Vector2(260, 16)
+size_flags_horizontal = 3
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarHp"
+
+[node name="HpBarFill" type="ProgressBar" parent="Root/TopBar/VBox/HpBarRow"]
+custom_minimum_size = Vector2(258, 14)
+size_flags_horizontal = 3
+position = Vector2(1, 1)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarHp"
+
+[node name="HpBarInner" type="ProgressBar" parent="Root/TopBar/VBox/HpBarRow"]
+custom_minimum_size = Vector2(256, 12)
+position = Vector2(2, 2)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarHp"
+
+[node name="RelicRow" type="HBoxContainer" parent="Root/TopBar/VBox"]
+visible = false
+theme_type_variation = &"PanelCard"
+
+[node name="RelicLabel" type="Label" parent="Root/TopBar/VBox/RelicRow"]
+size_flags_horizontal = 3
+text = "遗物：—"
+theme_type_variation = &"LabelBody"
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 12
+
+[node name="Row3" type="HBoxContainer" parent="Root/TopBar/VBox"]
+theme_type_variation = &"PanelCard"
+
+[node name="XpBarBg" type="ProgressBar" parent="Root/TopBar/VBox/Row3"]
+custom_minimum_size = Vector2(220, 12)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarXp"
+
+[node name="XpBarFill" type="ProgressBar" parent="Root/TopBar/VBox/Row3"]
+custom_minimum_size = Vector2(218, 10)
+position = Vector2(1, 1)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarXp"
+
+[node name="XpLabel" type="Label" parent="Root/TopBar/VBox/Row3"]
+text = "0/8"
+theme_type_variation = &"LabelValue"
+vertical_alignment = 1
+
+[node name="Spacer" type="Control" parent="Root/TopBar/VBox/Row3"]
+size_flags_horizontal = 3
+
+[node name="EnemyIcon" type="Label" parent="Root/TopBar/VBox/Row3"]
+text = "👾"
+theme_type_variation = &"LabelMeta"
+vertical_alignment = 1
+
+[node name="EnemyLabel" type="Label" parent="Root/TopBar/VBox/Row3"]
+text = "0"
+theme_type_variation = &"LabelValue"
+vertical_alignment = 1
+
+[node name="ThreatEdge" type="Control" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("3")
+theme_type_variation = &"PanelCard"
+
+[node name="HpBarBg" type="Panel" parent="Root"]
+visible = false
+
+[node name="HpBarFill" type="Panel" parent="Root"]
+visible = false
+
+[node name="XpBar" type="ProgressBar" parent="Root"]
+visible = false
+theme_type_variation = &"BarXp"
+
+[node name="XpLabel" type="Label" parent="Root"]
+visible = false
+theme_type_variation = &"LabelValue"
+
+[node name="PerfLabel" type="Label" parent="Root"]
+visible = false
+theme_type_variation = &"LabelMeta"
+
+[node name="BossContainer" type="PanelContainer" parent="Root"]
+offset_left = 12.0
+offset_top = 126.0
+offset_right = 420.0
+offset_bottom = 192.0
+visible = false
+theme_type_variation = &"PanelCard"
+
+[node name="VBox" type="VBoxContainer" parent="Root/BossContainer"]
+theme_type_variation = &"PanelCard"
+
+[node name="BossTitle" type="HBoxContainer" parent="Root/BossContainer/VBox"]
+theme_type_variation = &"PanelCard"
+
+[node name="BossIcon" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
+text = "💀"
+theme_type_variation = &"LabelMeta"
+
+[node name="BossLabel" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
+text = "首领"
+theme_type_variation = &"LabelBody"
+
+[node name="BossPhase" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
+text = "阶段 1"
+theme_type_variation = &"LabelMeta"
+
+[node name="Spacer" type="Control" parent="Root/BossContainer/VBox/BossTitle"]
+size_flags_horizontal = 3
+
+[node name="BossHpPercent" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
+text = "100%"
+theme_type_variation = &"LabelValue"
+
+[node name="BossBarBg" type="ProgressBar" parent="Root/BossContainer/VBox"]
+custom_minimum_size = Vector2(380, 18)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarBoss"
+
+[node name="BossBarFill" type="ProgressBar" parent="Root/BossContainer/VBox"]
+custom_minimum_size = Vector2(378, 16)
+position = Vector2(1, 1)
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarBoss"
+
+[node name="BossLabel" type="Label" parent="Root"]
+visible = false
+theme_type_variation = &"LabelBody"
+
+[node name="BossBar" type="ProgressBar" parent="Root"]
+visible = false
+theme_type_variation = &"BarBoss"
+
+[node name="EndlessLabel" type="Label" parent="Root"]
+visible = false
+theme_type_variation = &"LabelMeta"
+
+[node name="EquipButton" type="Button" parent="Root"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -132.0
+offset_top = 10.0
+offset_right = -16.0
+offset_bottom = 54.0
+text = "📦 装备"
+theme_type_variation = &"ButtonSecondary"
+
+[node name="DashButton" type="Button" parent="Root"]
+visible = false
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -252.0
+offset_top = 10.0
+offset_right = -136.0
+offset_bottom = 54.0
+text = "⚡ 冲刺"
+theme_type_variation = &"ButtonPrimary"
+
+[node name="PauseButton" type="Button" parent="Root"]
+visible = false
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -372.0
+offset_top = 10.0
+offset_right = -256.0
+offset_bottom = 54.0
+text = "⏸ 暂停"
+theme_type_variation = &"ButtonSecondary"
+
+[node name="JoystickRoot" type="Control" parent="Root"]
+anchors_preset = 0
+offset_left = 20.0
+offset_top = 420.0
+offset_right = 220.0
+offset_bottom = 620.0
+mouse_filter = 1
+theme_type_variation = &"PanelCard"
+
+[node name="Base" type="Panel" parent="Root/JoystickRoot"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -70.0
+offset_top = -70.0
+offset_right = 70.0
+offset_bottom = 70.0
+theme_type_variation = &"PanelCard"
+
+[node name="Knob" type="Panel" parent="Root/JoystickRoot"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -28.0
+offset_top = -28.0
+offset_right = 28.0
+offset_bottom = 28.0
+theme_type_variation = &"PanelCard"
+
+[node name="AimZone" type="Control" parent="Root"]
+anchors_preset = 0
+offset_left = 420.0
+offset_top = 280.0
+offset_right = 720.0
+offset_bottom = 620.0
+mouse_filter = 1
+theme_type_variation = &"PanelCard"
+
+[node name="AimHint" type="Panel" parent="Root/AimZone"]
+anchors_preset = 15
+theme_type_variation = &"PanelThreat"
+
+[node name="BossWarn" type="Panel" parent="Root"]
+anchors_preset = 15
+mouse_filter = 2
+theme_type_variation = &"PanelWarning"
+
+[node name="DamageFlash" type="Panel" parent="Root"]
+anchors_preset = 15
+mouse_filter = 2
+theme_type_variation = &"PanelDanger"
+
+[node name="EndlessBadge" type="PanelContainer" parent="Root"]
+offset_left = 420.0
+offset_top = 52.0
+offset_right = 600.0
+offset_bottom = 84.0
+visible = false
+theme_type_variation = &"PanelBadge"
+
+[node name="Label" type="Label" parent="Root/EndlessBadge"]
+text = "∞ 无尽模式"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"LabelMeta"
+
+[node name="ExtractionAlert" type="PanelContainer" parent="Root"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -220.0
+offset_top = 100.0
+offset_right = 220.0
+offset_bottom = 156.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_type_variation = &"PanelBadge"
+
+[node name="Label" type="Label" parent="Root/ExtractionAlert"]
+layout_mode = 2
+text = "撤离信号  01:00"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"LabelValue"
+
+[node name="ActiveSkillPanel" type="PanelContainer" parent="Root"]
+visible = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -140.0
+offset_top = -112.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_type_variation = &"PanelCard"
+
+[node name="VBox" type="VBoxContainer" parent="Root/ActiveSkillPanel"]
+layout_mode = 2
+
+[node name="HintLabel" type="Label" parent="Root/ActiveSkillPanel/VBox"]
+layout_mode = 2
+text = "主动 右键/R"
+horizontal_alignment = 2
+theme_type_variation = &"LabelMeta"
+
+[node name="CooldownBar" type="ProgressBar" parent="Root/ActiveSkillPanel/VBox"]
+custom_minimum_size = Vector2(118, 14)
+layout_mode = 2
+min_value = 0.0
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_type_variation = &"BarXp"
