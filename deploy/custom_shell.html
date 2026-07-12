@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="theme-color" content="#0a0e1a">
+	<title>$GODOT_PROJECT_NAME</title>
+	<style>
+		html, body {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			background: #0a0e1a;
+			touch-action: none;
+			-webkit-touch-callout: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+		#canvas {
+			display: block;
+			width: 100%;
+			height: 100%;
+			outline: none;
+		}
+		#status, #status-notice {
+			position: fixed;
+			left: 0;
+			right: 0;
+			z-index: 2;
+			text-align: center;
+			font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+			color: #d8e6ff;
+			pointer-events: none;
+		}
+		#status {
+			top: 12px;
+			font-size: 14px;
+		}
+		#status-notice {
+			bottom: 16px;
+			font-size: 12px;
+			opacity: 0.8;
+		}
+	</style>
+	$GODOT_HEAD_INCLUDE
+</head>
+<body>
+	$GODOT_SPLASH
+	<canvas id="canvas">$GODOT_CANVAS</canvas>
+	<div id="status">加载中… 首次打开可能需等待 10–30 秒</div>
+	<div id="status-notice">横屏游玩 · 左下摇杆移动 · 右下冲刺</div>
+	$GODOT_SCRIPTS
+</body>
+</html>

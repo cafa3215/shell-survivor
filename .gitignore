@@ -2,9 +2,9 @@
 .import/
 .mono/
 
-# Exports (Godot default)
+# Exports (Godot default) — presets are safe to commit; credentials stay local
 export.cfg
-export_presets.cfg
+.godot/export_credentials.cfg
 
 # Editor / OS
 .vscode/
@@ -15,6 +15,9 @@ Desktop.ini
 
 # Logs / caches
 *.log
+
+# Export artifacts (CI builds to build/web; local export same path)
+build/
 
 # Python helper script caches (repo includes validate_exp_log.py)
 __pycache__/

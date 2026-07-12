@@ -19,6 +19,11 @@
 3. 移动：WASD / 方向键 / 触摸摇杆
 4. 武器自动射击，专注走位即可
 
+### 手机 / 线上试玩
+
+- 导出 Web 版后可用手机浏览器打开链接游玩（触摸摇杆已内置）
+- 完整步骤见 **[docs/MOBILE_DEPLOY.md](docs/MOBILE_DEPLOY.md)**（itch.io / GitHub Pages / APK）
+
 ---
 
 ## 游戏机制
