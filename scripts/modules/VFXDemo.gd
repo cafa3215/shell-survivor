@@ -61,10 +61,11 @@ func _update_status(t: String) -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	# 循环播放一组代表性粒子，方便肉眼检查减粒子开关是否生效。
+	var origin := _pm.global_position
 	if Engine.get_frames_drawn() % 45 == 0:
-		_pm.explosion(global_position + Vector2(0, 40))
+		_pm.explosion(origin + Vector2(0, 40))
 	if Engine.get_frames_drawn() % 35 == 0:
-		_pm.lightning_spark(global_position + Vector2(90, 0))
+		_pm.lightning_spark(origin + Vector2(90, 0))
 	if Engine.get_frames_drawn() % 55 == 0:
-		_pm.shockwave_ring(global_position + Vector2(-90, 0))
+		_pm.shockwave_ring(origin + Vector2(-90, 0))
 

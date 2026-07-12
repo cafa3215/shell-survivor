@@ -28,29 +28,58 @@ var _beam_outline: Line2D = null
 var _beam_glow: Line2D = null
 var _beam_core: Line2D = null
 var _cast_seq := 0
+var _bind_retry_left := 0.0
+var _bind_warned := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_INHERIT
 	EventBus.game_started.connect(_on_game_started)
+	EventBus.game_resumed.connect(_on_game_resumed)
 	EventBus.game_over.connect(_on_game_over)
 
 func _on_game_started() -> void:
+	_bind_warned = false
 	call_deferred("_bind_game")
+
+func _on_game_resumed() -> void:
+	if _game == null or not is_instance_valid(_game):
+		call_deferred("_bind_game")
 
 func _on_game_over(_win: bool) -> void:
 	_unbind_game()
 
-func _bind_game() -> void:
-	_unbind_game()
+func _find_game_node() -> Node2D:
 	var main := get_tree().root.get_node_or_null("Main")
-	if main == null:
+	if main:
+		var direct := main.get_node_or_null("Game") as Node2D
+		if direct:
+			return direct
+	for child in get_tree().root.get_children():
+		if child is Node:
+			var nested := (child as Node).get_node_or_null("Game") as Node2D
+			if nested:
+				return nested
+	var grouped := get_tree().get_first_node_in_group("active_game") as Node2D
+	return grouped
+
+func bind_to_game(game: Node2D) -> void:
+	if game == null or not is_instance_valid(game):
 		return
-	var g := main.get_node_or_null("Game") as Node2D
-	if g == null:
+	_unbind_game()
+	_game = game
+	_player = game.get_node_or_null("Player") as Node2D
+	if _player == null:
+		push_warning("ActiveSkillManager: Player 未找到")
 		return
-	_game = g
-	_player = g.get_node_or_null("Player") as Node2D
-	_ensure_beam_visual(g)
+	_ensure_beam_visual(game)
+	_bind_warned = false
+
+
+func _bind_game() -> void:
+	bind_to_game(_find_game_node())
+	if _game == null and not _bind_warned:
+		_bind_warned = true
+		push_warning("ActiveSkillManager: Game 未找到，将在对局中重试绑定")
 
 func _unbind_game() -> void:
 	_laser_firing = false
@@ -107,7 +136,11 @@ func _ensure_beam_visual(game: Node2D) -> void:
 	_beam_root.add_child(_beam_core)
 
 func _process(delta: float) -> void:
-	if _game == null or not is_instance_valid(_game):
+	if _game == null or not is_instance_valid(_game) or _player == null or not is_instance_valid(_player):
+		_bind_retry_left -= delta
+		if _bind_retry_left <= 0.0:
+			_bind_retry_left = 0.75
+			_bind_game()
 		return
 	if get_tree().paused:
 		_stop_laser_visual_only()
@@ -115,7 +148,7 @@ func _process(delta: float) -> void:
 		return
 	_cooldown_left = maxf(0.0, _cooldown_left - delta)
 	var can_use := _cooldown_left <= 0.0
-	var want_fire := Input.is_action_pressed("active_skill")
+	var want_fire := _is_active_skill_pressed()
 
 	if want_fire and can_use:
 		if not _laser_firing:
@@ -243,3 +276,17 @@ func get_cooldown_ratio() -> float:
 	if COOLDOWN_SEC <= 0.0:
 		return 1.0
 	return clampf(1.0 - _cooldown_left / COOLDOWN_SEC, 0.0, 1.0)
+
+
+func is_bound() -> bool:
+	return _game != null and is_instance_valid(_game) and _player != null and is_instance_valid(_player)
+
+
+func _is_active_skill_pressed() -> bool:
+	if Input.is_action_pressed("active_skill"):
+		return true
+	if Input.is_physical_key_pressed(KEY_R):
+		return true
+	if Input.is_key_pressed(KEY_R):
+		return true
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)

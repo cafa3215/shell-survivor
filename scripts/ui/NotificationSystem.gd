@@ -1,5 +1,4 @@
 extends CanvasLayer
-class_name NotificationSystem
 
 # 通知系统 - 美化版提示信息
 # 使用方式: NotificationSystem.push("消息内容", 类型)
@@ -10,17 +9,20 @@ const NOTIFY_Z_INDEX := 200
 
 # 通知配置
 const CONFIGS := {
-	"info": {"icon": "ℹ️", "variation": &"PanelNotification"},
-	"success": {"icon": "✅", "variation": &"PanelNotificationSuccess"},
-	"warning": {"icon": "⚠️", "variation": &"PanelNotificationWarning"},
-	"error": {"icon": "❌", "variation": &"PanelNotificationWarning"},
-	"item": {"icon": "⭐", "variation": &"PanelNotificationSuccess"},
-	"achievement": {"icon": "🏆", "variation": &"PanelNotificationSuccess"}
+	"info": {"icon": "ℹ️", "variation": &"Notification"},
+	"success": {"icon": "✅", "variation": &"NotificationSuccess"},
+	"warning": {"icon": "⚠️", "variation": &"NotificationWarning"},
+	"error": {"icon": "❌", "variation": &"NotificationWarning"},
+	"item": {"icon": "⭐", "variation": &"NotificationSuccess"},
+	"achievement": {"icon": "🏆", "variation": &"NotificationSuccess"}
 }
 
 var _queue: Array[Dictionary] = []
 var _current: Control = null
 var _showing := false
+
+func _viewport_size() -> Vector2:
+	return get_viewport().get_visible_rect().size
 
 func _ready() -> void:
 	EventBus.notification_shown.connect(_on_notification_requested)
@@ -30,6 +32,13 @@ func _on_notification_requested(msg: String, duration := DEFAULT_DURATION, type 
 	_queue.append({"msg": msg, "duration": duration, "type": type})
 	if not _showing:
 		_show_next()
+
+func _exit_tree() -> void:
+	_showing = false
+	_queue.clear()
+	if _current:
+		_current.queue_free()
+		_current = null
 
 func _show_next() -> void:
 	if _queue.is_empty():
@@ -55,75 +64,82 @@ func _show_next() -> void:
 	var tween := create_tween().set_trans(UIMotion.TRANS_ENTRANCE).set_ease(UIMotion.EASE_OUT).set_parallel(true)
 	
 	# 滑入
-	notify.position.x = get_viewport_rect().size.x
-	tween.tween_property(notify, "position:x", get_viewport_rect().size.x - 420.0, UIMotion.MOTION_PANEL)
-	
-	# 淡入
-	var bg := notify.get_node_or_null("Background") as Control
-	
-	# 等待后淡出
+	var target_x := _viewport_size().x - notify.size.x - 20.0
+	notify.position.x = _viewport_size().x
+	tween.tween_property(notify, "position:x", target_x, UIMotion.MOTION_PANEL)
+
+	# 等待后滑出
+	if not is_inside_tree():
+		return
 	await get_tree().create_timer(maxf(data.duration, 1.0)).timeout
+	if not is_inside_tree():
+		return
 	
 	tween = create_tween().set_trans(UIMotion.TRANS_ENTRANCE).set_ease(UIMotion.EASE_IN_OUT).set_parallel(true)
-	tween.tween_property(notify, "position:x", get_viewport_rect().size.x + 50.0, UIMotion.MOTION_PANEL)
+	tween.tween_property(notify, "position:x", _viewport_size().x + 50.0, UIMotion.MOTION_PANEL)
 	
 	await tween.finished
+	if not is_inside_tree():
+		return
 	notify.queue_free()
 	_show_next()
 
 func _create_notification(msg: String, cfg: Dictionary, ntype: String) -> Control:
-	var root := Control.new()
+	var root := PanelContainer.new()
 	root.z_index = NOTIFY_Z_INDEX
-	
-	# 尺寸和位置
-	var vp_size := get_viewport_rect().size
-	root.size = Vector2(400, 70)
-	root.position = Vector2(vp_size.x - 420.0, vp_size.y * 0.15)
-	
-	# 背景面板
-	var bg := Panel.new()
-	bg.anchor_right = 0.0
-	bg.anchor_bottom = 0.0
-	bg.size = root.size
-	bg.z_index = -1
-	
-	bg.theme_type_variation = cfg.get("variation", &"PanelNotification")
-	root.add_child(bg)
-	
-	# 内容容器
+	root.theme_type_variation = cfg.get("variation", &"Notification")
+	root.custom_minimum_size = Vector2(400, 70)
+	root.clip_contents = true
+
+	var vp_size := _viewport_size()
+	root.size = root.custom_minimum_size
+	root.position = Vector2(vp_size.x - root.size.x - 20.0, vp_size.y * 0.12)
+
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	root.add_child(margin)
+
 	var hbox := HBoxContainer.new()
-	hbox.anchors_preset = Control.PRESET_FULL_RECT
-	root.add_child(hbox)
-	
-	# 图标
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_theme_constant_override("separation", 10)
+	margin.add_child(hbox)
+
 	var icon := Label.new()
 	icon.text = cfg.icon
 	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	icon.custom_minimum_size = Vector2(40, 50)
-	icon.theme_type_variation = &"Label.Meta"
+	icon.custom_minimum_size = Vector2(36, 0)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.theme_type_variation = &"Meta"
 	hbox.add_child(icon)
-	
-	# 消息文本
+
 	var label := Label.new()
 	label.text = msg
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	label.custom_minimum_size = Vector2(300, 0)
 	label.theme_type_variation = _notification_label_variation(ntype)
 	hbox.add_child(label)
-	
+
 	return root
 
 func _notification_label_variation(ntype: String) -> StringName:
 	match ntype:
 		"warning", "error":
-			return &"Label.Notification.Warning"
+			return &"NotificationWarning"
 		"success", "item", "achievement":
-			return &"Label.Notification.Success"
+			return &"NotificationSuccess"
 		_:
-			return &"Label.Notification"
+			return &"Notification"
 
 # 静态便捷方法（避免与 Node.show 冲突，使用 push）
 static func notify_message(msg: String, duration := DEFAULT_DURATION, type := "info") -> void:

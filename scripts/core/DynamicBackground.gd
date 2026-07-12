@@ -54,11 +54,11 @@ func _process(delta: float) -> void:
 		if _player == null:
 			_player = get_tree().get_first_node_in_group("player") as Node2D
 	
-	# 地面随玩家移动（2x2平铺覆盖）
+	# 地面 2x2 平铺：以相机为锚点，避免与镜头脱节
 	if _player and is_instance_valid(_player):
-		var p := _player.global_position
+		var cam := get_viewport().get_camera_2d()
+		var p := cam.global_position if cam else _player.global_position
 		_tile_offset = p
-		# 平铺纹理跟随（确保无缝覆盖）
 		var tile_size := 1800.0
 		if _ground_sprite:
 			_ground_sprite.global_position = Vector2(
@@ -133,9 +133,9 @@ func _fill_procedural_ground_tile(img: Image, tile_size: int) -> void:
 			var m := noise_macro.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
 			var w := noise_warp.get_noise_2d(float(x), float(y)) * 0.5 + 0.5
 			var f := noise_fine.get_noise_2d(float(x), float(y)) * 0.12
-			var br := 0.11 + m * 0.07 + (w - 0.5) * 0.04 + f
-			var bg := 0.112 + m * 0.065 + (w - 0.5) * 0.035 + f * 0.95
-			var bb := 0.118 + m * 0.058 + (w - 0.5) * 0.032 + f * 0.9
+			var br := 0.14 + m * 0.085 + (w - 0.5) * 0.05 + f
+			var bg := 0.142 + m * 0.078 + (w - 0.5) * 0.042 + f * 0.95
+			var bb := 0.148 + m * 0.072 + (w - 0.5) * 0.04 + f * 0.9
 			var nx := float(x) / float(macro)
 			var ny := float(y) / float(macro)
 			var sheen := pow(sin(nx * TAU * 2.4 + ny * 0.9) * 0.5 + 0.5, 14.0) * 0.055

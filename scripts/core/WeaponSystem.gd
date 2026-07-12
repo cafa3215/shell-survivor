@@ -40,6 +40,9 @@ var _threat_hit_cd: float = 0.0
 var _extreme_perf_mode := false
 var _extreme_perf_tick := 0.0
 var _dev_reload_hotkey_cd := 0.0
+var _run_combat_active := false
+var _combat_warmup_rem := 0.0
+const _COMBAT_WARMUP_SEC := 1.35
 
 ## 核心武器“逻辑卡片”：集中维护轨迹/命中/特效关键参数，便于快速扩展新武器。
 const _WEAPON_LOGIC_CARD := {
@@ -154,11 +157,11 @@ func _ready() -> void:
 	for wid in GameDB.WEAPONS.keys():
 		level_map[wid] = 0
 		cd_map[wid] = GameDB.WEAPONS[wid]["base_cd"]
-		timer_map[wid] = 0.0
+		timer_map[wid] = 999.0
 	
-	# 初始武器
+	# 开局仅苦无：第二武器靠升级获得，避免特效叠满屏
 	level_map["kunai"] = 1
-	level_map["quantum_ball"] = 1
+	timer_map["kunai"] = 0.85
 	
 	# 设置自动射击模式
 	InputManager.set_aim_mode(InputManager.AimMode.AUTO)
@@ -166,13 +169,10 @@ func _ready() -> void:
 	
 	EventBus.fusion_applied.connect(_on_fusion_applied)
 	EventBus.weapon_cards_reload_requested.connect(_on_weapon_cards_reload_requested)
+	if not EventBus.game_started.is_connected(_on_game_started):
+		EventBus.game_started.connect(_on_game_started)
 	_weapon_telegraph = get_parent().get_node_or_null("WeaponTelegraph")
-	_projectile_layer = get_parent().get_node_or_null("WeaponProjectileLayer") as WeaponProjectileLayer
-	if _projectile_layer == null:
-		_projectile_layer = WeaponProjectileLayer.new()
-		_projectile_layer.name = "WeaponProjectileLayer"
-		get_parent().add_child(_projectile_layer)
-		_projectile_layer.z_index = 4
+	_ensure_projectile_layer()
 	
 	# 初始化无人机位置
 	_drone_positions.clear()
@@ -180,11 +180,25 @@ func _ready() -> void:
 	_drone_positions.append(Vector2.ZERO)
 	_load_source_feedback_card_runtime()
 
+
+func _on_game_started() -> void:
+	_run_combat_active = false
+	_combat_warmup_rem = _COMBAT_WARMUP_SEC
+	for wid in timer_map.keys():
+		if int(level_map.get(wid, 0)) > 0:
+			timer_map[wid] = maxf(float(timer_map[wid]), 0.75)
+	if _projectile_layer != null and _projectile_layer.has_method("clear_weapon_mounts"):
+		_projectile_layer.clear_weapon_mounts()
+
 func _process(delta: float) -> void:
 	_update_dev_hot_reload_input(delta)
 	_damage_numbers_this_frame = 0
 	_update_fx_cooldowns(delta)
 	_ensure_runtime_refs()
+	if _combat_warmup_rem > 0.0:
+		_combat_warmup_rem = maxf(0.0, _combat_warmup_rem - delta)
+		if _combat_warmup_rem <= 0.0:
+			_run_combat_active = true
 
 	# Runtime self-heal: keep auto aim/fire stable during long sessions.
 	if InputManager.aim_mode != InputManager.AimMode.AUTO:
@@ -194,7 +208,8 @@ func _process(delta: float) -> void:
 	if player == null or enemy_manager == null:
 		return
 	_update_extreme_perf_mode(delta)
-	_sync_weapon_presence_visuals()
+	if _run_combat_active:
+		_sync_weapon_presence_visuals()
 
 	# 更新特效
 	_update_rocket_pending(delta)
@@ -207,6 +222,8 @@ func _process(delta: float) -> void:
 	_update_mines(delta)
 
 	if not InputManager.should_fire():
+		return
+	if not _run_combat_active:
 		return
 
 	# 自动射击所有激活的武器
@@ -222,9 +239,10 @@ func _process(delta: float) -> void:
 				player.notify_weapon_fired(wid)
 
 func _sync_weapon_presence_visuals() -> void:
-	if _projectile_layer == null:
+	if _projectile_layer == null or player == null:
 		return
-	if player == null:
+	if player.has_method("uses_kaykit_visual") and bool(player.call("uses_kaykit_visual")):
+		_projectile_layer.clear_weapon_mounts()
 		return
 	var active: Array[String] = []
 	for wid in level_map.keys():
@@ -232,7 +250,6 @@ func _sync_weapon_presence_visuals() -> void:
 		if lv <= 0:
 			continue
 		active.append(String(wid))
-	# 固定顺序，避免升降级时武器挂点瞬移。
 	active.sort()
 	var aim_dir := Vector2.RIGHT
 	var target: Variant = _nearest_enemy_pos(player.global_position, 420.0)
@@ -383,6 +400,22 @@ func _ensure_runtime_refs() -> void:
 		_skill_system = parent.get_node_or_null("SkillSystem")
 	if _particle_mgr == null or not is_instance_valid(_particle_mgr):
 		_particle_mgr = parent.get_node_or_null("ParticleManager")
+	_ensure_projectile_layer()
+
+
+func _ensure_projectile_layer() -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	if _projectile_layer != null and is_instance_valid(_projectile_layer):
+		return
+	_projectile_layer = parent.get_node_or_null("WeaponProjectileLayer") as WeaponProjectileLayer
+	if _projectile_layer != null:
+		return
+	_projectile_layer = WeaponProjectileLayer.new()
+	_projectile_layer.name = "WeaponProjectileLayer"
+	_projectile_layer.z_index = 4
+	parent.call_deferred("add_child", _projectile_layer)
 
 
 func _world_curse_out_damage_mul() -> float:
@@ -481,10 +514,10 @@ func _fire_kunai(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 	target_pos = origin + aim_dir * travel
 	var arc_mid := origin.lerp(target_pos, 0.55) + aim_dir.orthogonal() * randf_range(-float(card["trail_arc_jitter"]), float(card["trail_arc_jitter"])) * (float(card["trail_arc_mul_base"]) + lv * float(card["trail_arc_mul_per_lv"]))
 	_projectile_visual(origin, aim_dir, "kunai", 700.0 + lv * 18.0, 0.38, lv, is_evolved)
-	# 弹壳风格的“连射质感”：增加两枚纯视觉短影刃，不参与伤害判定。
-	var kunai_echo_spread := 0.07 + float(lv) * 0.006
-	_projectile_visual(origin + aim_dir.orthogonal() * -5.0, aim_dir.rotated(-kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
-	_projectile_visual(origin + aim_dir.orthogonal() * 5.0, aim_dir.rotated(kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
+	if lv >= 2 or is_evolved:
+		var kunai_echo_spread := 0.07 + float(lv) * 0.006
+		_projectile_visual(origin + aim_dir.orthogonal() * -5.0, aim_dir.rotated(-kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
+		_projectile_visual(origin + aim_dir.orthogonal() * 5.0, aim_dir.rotated(kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
 	if _weapon_telegraph != null:
 		_weapon_telegraph.add_kunai_trail(origin, arc_mid)
 		_weapon_telegraph.add_kunai_trail(arc_mid, target_pos)

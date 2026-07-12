@@ -1,59 +1,73 @@
 {
   "weapons": {
     "kunai": {
-      "model_glb": "res://assets/game_pack/models/weapons/kunai.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\kunai.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/dagger.gltf",
+      "kaykit_source": "dagger.gltf",
       "theme": "neutral"
     },
     "quantum_ball": {
-      "model_glb": "res://assets/game_pack/models/weapons/quantum_ball.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\quantum_ball.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/spellbook_closed.gltf",
+      "kaykit_source": "spellbook_closed.gltf",
       "theme": "electric"
     },
     "lightning": {
-      "model_glb": "res://assets/game_pack/models/weapons/lightning.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\lightning.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/staff.gltf",
+      "kaykit_source": "staff.gltf",
       "theme": "electric"
     },
     "rocket": {
-      "model_glb": "res://assets/game_pack/models/weapons/rocket.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\rocket.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/crossbow_2handed.gltf",
+      "kaykit_source": "crossbow_2handed.gltf",
       "theme": "explosive"
     },
     "molotov": {
-      "model_glb": "res://assets/game_pack/models/weapons/molotov.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\molotov.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/mug_full.gltf",
+      "kaykit_source": "mug_full.gltf",
       "theme": "explosive"
     },
     "guardian": {
-      "model_glb": "res://assets/game_pack/models/weapons/guardian.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\guardian.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/shield_round_color.gltf",
+      "kaykit_source": "shield_round_color.gltf",
       "theme": "neutral"
     },
     "drone_ab": {
-      "model_glb": "res://assets/game_pack/models/weapons/drone_ab.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\drone_ab.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/quiver.gltf",
+      "kaykit_source": "quiver.gltf",
       "theme": "electric"
     },
     "boomerang": {
-      "model_glb": "res://assets/game_pack/models/weapons/boomerang.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\boomerang.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/axe_1handed.gltf",
+      "kaykit_source": "axe_1handed.gltf",
       "theme": "frost"
     },
     "frost_aura": {
-      "model_glb": "res://assets/game_pack/models/weapons/frost_aura.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\frost_aura.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/wand.gltf",
+      "kaykit_source": "wand.gltf",
       "theme": "frost"
     },
+    "heal_aura": {
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/spellbook_open.gltf",
+      "kaykit_source": "spellbook_open.gltf",
+      "theme": "heal"
+    },
     "stun_mine": {
-      "model_glb": "res://assets/game_pack/models/weapons/stun_mine.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\stun_mine.png",
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/smokebomb.gltf",
+      "kaykit_source": "smokebomb.gltf",
       "theme": "explosive"
     },
-    "heal_aura": {
-      "model_glb": "res://assets/game_pack/models/weapons/heal_aura.glb",
-      "preview_png": "C:\\Users\\潘奇\\Desktop\\新建文件夹\\tmp\\weapon_model_previews\\heal_aura.png",
-      "theme": "heal"
+    "active_bolt": {
+      "model_glb": "res://assets/game_pack/models/accessories/gltf/wand.gltf",
+      "kaykit_source": "wand.gltf",
+      "theme": "electric"
     }
+  },
+  "hero": {
+    "rogue": "res://assets/game_pack/models/hero/rogue.glb"
+  },
+  "enemies": {
+    "skeleton_warrior": "res://assets/game_pack/models/enemies/skeleton_warrior.glb",
+    "skeleton_mage": "res://assets/game_pack/models/enemies/skeleton_mage.glb",
+    "skeleton_rogue": "res://assets/game_pack/models/enemies/skeleton_rogue.glb",
+    "skeleton_minion": "res://assets/game_pack/models/enemies/skeleton_minion.glb"
   }
 }

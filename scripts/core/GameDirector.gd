@@ -91,9 +91,14 @@ func maybe_threat_relief_on_kill(kind_s: String, elapsed: float) -> void:
 
 
 func target_enemy_count(elapsed: float, level: int, endless_mode: bool) -> int:
-	var base_target := 920
-	var time_bonus := int(GameDB.director_alive_pressure_minutes(elapsed) * 110.0)
-	var level_bonus := level * 22
+	# 前 4 分钟：稀疏入场，给摸索窗口（不再维持 460+ 尸潮）
+	if not endless_mode and elapsed < 240.0:
+		if elapsed < 90.0:
+			return int(round(lerpf(8.0, 32.0, elapsed / 90.0)))
+		return int(round(lerpf(32.0, 110.0, (elapsed - 90.0) / 150.0)))
+	var base_target := 680
+	var time_bonus := int(GameDB.director_alive_pressure_minutes(elapsed) * 95.0)
+	var level_bonus := level * 18
 	var target := base_target + time_bonus + level_bonus - int(round(pressure_relief))
 	if elapsed >= 480.0 and elapsed <= 960.0:
 		var mid_u := clampf((elapsed - 480.0) / 480.0, 0.0, 1.0)
@@ -111,7 +116,7 @@ func target_enemy_count(elapsed: float, level: int, endless_mode: bool) -> int:
 			target = int(round(float(target) * 0.86))
 		elif endless_u >= 5.0:
 			target = int(round(float(target) * 0.93))
-	target = maxi(460, target)
+	target = maxi(72, target)
 	match Settings.quality:
 		Settings.Quality.LOW:
 			return int(target * 0.8)
@@ -171,11 +176,15 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 		target += 0.14
 	var dir_max := 1.84 if endless_mode else 1.66
 	target = clampf(target, 0.65, dir_max)
+	# 前 ~3 分钟封顶压力，避免「还没爽就扛不住」
+	if elapsed < 240.0:
+		var early_cap := lerpf(0.88, 1.06, elapsed / 240.0)
+		target = minf(target, early_cap)
 	director_mul = lerpf(director_mul, target, 0.15)
 
 	var xp_target := 1.0
 	if behind_level >= 2:
-		xp_target += 0.10 + minf(0.12, float(behind_level - 2) * 0.04)
+		xp_target += 0.05 + minf(0.08, float(behind_level - 2) * 0.025)
 	elif ahead_level >= 3:
 		xp_target -= minf(0.12, float(ahead_level - 2) * 0.035)
 	if player_hp_ratio < 0.35:
@@ -193,9 +202,12 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 
 
 func _tick_director_phase_callouts(elapsed: float) -> void:
+	if elapsed < 150.0:
+		return
 	var checkpoints := [
 		["phase_3m", 180.0, "导演换挡：远程与重装混编开始抬头，别只顾清杂兵。", "warning"],
 		["phase_6m", 360.0, "中盘升压：召唤师与冲锋者登场，优先击杀高威胁单位。", "warning"],
+		["phase_8m_windup", 480.0, "读场提示：脚下橙色蓄力圈 = 即将攻击，先躲再输出。", "info"],
 		["phase_9m", 540.0, "高压阶段：场面会更乱，构筑若未成型请优先保命。", "error"],
 	]
 	for row in checkpoints:

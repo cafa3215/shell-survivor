@@ -25,6 +25,8 @@ tmp/
 *.tmp
 *.bak
 *.orig
+.vendor/
+tools/_*.txt
 
 # IDE / agent tooling (not part of the game)
 .cursor/

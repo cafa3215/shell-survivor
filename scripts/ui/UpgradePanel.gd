@@ -1,9 +1,9 @@
 extends Control
 class_name UpgradePanel
 
-@onready var c1: Button = $CardRow/Card1
-@onready var c2: Button = $CardRow/Card2
-@onready var c3: Button = $CardRow/Card3
+@onready var c1: Button = $Background/Margin/VBox/CardRow/Card1
+@onready var c2: Button = $Background/Margin/VBox/CardRow/Card2
+@onready var c3: Button = $Background/Margin/VBox/CardRow/Card3
 var _ids: Array[String] = []
 var _weapon_system: Node = null
 var _skill_system: Node = null
@@ -14,6 +14,11 @@ var _hovered_card_idx := -1
 
 func _ready() -> void:
 	_card_buttons = [c1, c2, c3]
+	for b in _card_buttons:
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size = Vector2(0, 148)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.size_flags_stretch_ratio = 1.0
 	c1.pressed.connect(func(): _pick(0))
 	c2.pressed.connect(func(): _pick(1))
 	c3.pressed.connect(func(): _pick(2))
@@ -80,6 +85,22 @@ func open_with_options(opts: Array) -> void:
 	_hovered_card_idx = -1
 	_refresh_card_variations()
 	_reset_card_scales()
+	call_deferred("_apply_responsive_layout")
+
+
+func _apply_responsive_layout() -> void:
+	var bg := get_node_or_null("Background") as PanelContainer
+	if bg == null:
+		return
+	var vr := get_viewport_rect().size
+	if vr.x <= 1.0 or vr.y <= 1.0:
+		return
+	var panel_w := clampf(vr.x * 0.86, 820.0, 1120.0)
+	var panel_h := clampf(vr.y * 0.58, 340.0, 480.0)
+	bg.offset_left = -panel_w * 0.5
+	bg.offset_top = -panel_h * 0.5
+	bg.offset_right = panel_w * 0.5
+	bg.offset_bottom = panel_h * 0.5
 
 func _pick(i: int) -> void:
 	if i >= _ids.size() or _is_picking:

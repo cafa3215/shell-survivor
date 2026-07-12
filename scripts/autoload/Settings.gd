@@ -20,14 +20,20 @@ var high_contrast_targets: bool = true
 var show_damage_numbers: bool = true
 var enable_screen_flash: bool = true
 var reduce_particles: bool = false
-var vfx_profile: VfxProfile = VfxProfile.BALANCED
+var vfx_profile: VfxProfile = VfxProfile.CINEMATIC
 var extreme_perf_guard: bool = true
-## 首局 0-180 秒吸引力强度档位
-var early_flow_preset: EarlyFlowPreset = EarlyFlowPreset.NORMAL
+## 首局 0-180 秒吸引力强度档位（默认偏软：先让人想玩下去）
+var early_flow_preset: EarlyFlowPreset = EarlyFlowPreset.SOFT
+## 记住上次专精/遗物，下局跳过双面板（单人反复试玩用）
+var remember_run_loadout: bool = true
+var last_run_archetype_id: String = ""
+var last_run_relic_id: String = ""
 ## 人物可见性档位：影响主角标记强度、敌人压暗与飘字避让力度。
-var readability_preset: ReadabilityPreset = ReadabilityPreset.MEDIUM
+var readability_preset: ReadabilityPreset = ReadabilityPreset.HIGH
 ## 主菜单选择的作战地图索引（与 GameDB.MAP_TEMPLATES 对齐；章节化入口的第一步）
 var selected_map_index: int = 0
+## KayKit 3D 主角（SubViewport）；关闭则回退 2D 骨架/立绘
+var use_kaykit_visual: bool = false
 const _SAVE_PATH := "user://settings.cfg"
 var _loading := false
 var _load_failed_last_time := false
@@ -172,7 +178,10 @@ func save_settings() -> void:
 	cfg.set_value("gameplay", "early_flow_preset", int(early_flow_preset))
 	cfg.set_value("gameplay", "readability_preset", int(readability_preset))
 	cfg.set_value("gameplay", "selected_map_index", selected_map_index)
-	cfg.set_value("audio", "sfx_volume", sfx_volume)
+	cfg.set_value("gameplay", "remember_run_loadout", remember_run_loadout)
+	cfg.set_value("gameplay", "last_run_archetype_id", last_run_archetype_id)
+	cfg.set_value("gameplay", "last_run_relic_id", last_run_relic_id)
+	cfg.set_value("gameplay", "use_kaykit_visual", use_kaykit_visual)
 	cfg.set_value("audio", "music_volume", music_volume)
 	var err := cfg.save(_SAVE_PATH)
 	if err != OK:
@@ -203,6 +212,12 @@ func load_settings() -> void:
 	var smi := int(cfg.get_value("gameplay", "selected_map_index", selected_map_index))
 	var smax := maxi(0, GameDB.MAP_TEMPLATES.size() - 1)
 	selected_map_index = clampi(smi, 0, smax)
+	remember_run_loadout = bool(cfg.get_value("gameplay", "remember_run_loadout", remember_run_loadout))
+	last_run_archetype_id = String(cfg.get_value("gameplay", "last_run_archetype_id", last_run_archetype_id))
+	last_run_relic_id = String(cfg.get_value("gameplay", "last_run_relic_id", last_run_relic_id))
+	use_kaykit_visual = bool(cfg.get_value("gameplay", "use_kaykit_visual", use_kaykit_visual))
+	# KayKit 3D 路线暂关：恢复 2D 骨架/立绘（用户存档里 true 也强制回退）
+	use_kaykit_visual = false
 	if vfx_profile < VfxProfile.COMPETITIVE:
 		vfx_profile = VfxProfile.COMPETITIVE
 	elif vfx_profile > VfxProfile.CINEMATIC:

@@ -41,7 +41,7 @@ func _create_engine_glow() -> void:
 			var dy := float(y) - center
 			var d := sqrt(dx * dx + dy * dy) / center
 			if d <= 1.0:
-				var alpha := pow(1.0 - d, 3.3) * 0.19
+				var alpha := pow(1.0 - d, 3.3) * 0.28
 				var r: float = lerp(1.0, 0.9, d)
 				var g: float = lerp(0.86, 0.65, d)
 				var b: float = lerp(0.34, 0.2, d)
@@ -89,8 +89,8 @@ func _create_direction_arrow() -> void:
 
 func _create_trail() -> void:
 	_trail_particles = GPUParticles2D.new()
-	_trail_particles.amount = 8
-	_trail_particles.lifetime = 0.22
+	_trail_particles.amount = 18
+	_trail_particles.lifetime = 0.28
 	_trail_particles.explosiveness = 0.0
 	_trail_particles.randomness = 0.3
 	_trail_particles.local_coords = false
@@ -100,8 +100,8 @@ func _create_trail() -> void:
 	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINT
 	mat.direction = Vector3(0, 0, 0)
 	mat.spread = 180.0
-	mat.initial_velocity_min = 3.0
-	mat.initial_velocity_max = 12.0
+	mat.initial_velocity_min = 6.0
+	mat.initial_velocity_max = 22.0
 	mat.gravity = Vector3.ZERO
 	mat.scale_min = 1.6
 	mat.scale_max = 3.2
@@ -109,9 +109,9 @@ func _create_trail() -> void:
 	mat.damping_max = 100.0
 	
 	var gradient := Gradient.new()
-	gradient.set_color(0, Color(0.28, 0.42, 0.38, 0.1))
-	gradient.set_color(1, Color(0.06, 0.1, 0.1, 0.0))
-	gradient.add_point(0.45, Color(0.16, 0.28, 0.26, 0.05))
+	gradient.set_color(0, Color(0.45, 0.88, 0.95, 0.22))
+	gradient.set_color(1, Color(0.08, 0.2, 0.22, 0.0))
+	gradient.add_point(0.45, Color(0.28, 0.62, 0.7, 0.12))
 	
 	var color_ramp := GradientTexture1D.new()
 	color_ramp.gradient = gradient

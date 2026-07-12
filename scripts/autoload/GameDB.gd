@@ -7,18 +7,24 @@ extends Node
 ## 权威版本号（主菜单/发版信息等统一从此读取）
 const GAME_VERSION := "v2.2"
 
-const RUN_TIME_SECONDS := 25 * 60  # 游戏时间从20分钟增加到25分钟
+const RUN_TIME_SECONDS := 18 * 60  # 首领 15 分后出现，再撑 3 分钟撤离
 ## 撤离前最后 N 秒显示 HUD 警报（与 RUN_TIME_SECONDS 配合）
 const EXTRACTION_ALERT_BEFORE_SEC := 60
 const ENEMY_MAX := 3200  # 增加最大敌人数
 const EXP_ORB_MAX := 2500
-const ACTIVE_RADIUS_PX := 2200.0  # 增加活动范围
-const BOSS_SPAWN_TIME := 22 * 60  # BOSS在22分钟出现
+const ACTIVE_RADIUS_PX := 4800.0  # 无限大地图：远距离仍激活 AI
+const UNLIMITED_WORLD_MOVEMENT := true
+## 仅用于 UI/旧逻辑兼容；UNLIMITED_WORLD_MOVEMENT 时不限制玩家坐标
+const ARENA_HALF_W := 1200.0
+const ARENA_HALF_H := 800.0
+const PLAYER_BOUND_MARGIN := 48.0
+const ENEMY_SPEED_GLOBAL_MUL := 1.30
+const BOSS_SPAWN_TIME := 15 * 60  # 首领 15 分钟出现
 
 # 无尽模式配置
-const ENDLESS_ENEMY_HP_SCALE_PER_MIN := 0.015    # 每分钟HP+1.5%
-const ENDLESS_ENEMY_DMG_SCALE_PER_MIN := 0.012    # 每分钟伤害+1.2%
-const ENDLESS_ENEMY_SPEED_SCALE_PER_MIN := 0.005  # 每分钟速度+0.5%
+const ENDLESS_ENEMY_HP_SCALE_PER_MIN := 0.028
+const ENDLESS_ENEMY_DMG_SCALE_PER_MIN := 0.022
+const ENDLESS_ENEMY_SPEED_SCALE_PER_MIN := 0.008
 const ENDLESS_SUPPLY_INTERVAL_SEC := 90.0        # BOSS 击破后无尽阶段：周期性补给间隔
 
 # ========== 《弓箭手传说》式：站定输出略快于移动扫射 ==========
@@ -147,16 +153,16 @@ const RUN_RELICS := {
 }
 
 const ENEMY_TYPES := [
-	{"name":"grunter", "hp":38.0, "speed":42.0, "damage":4.0, "color":Color(0.68, 0.55, 0.92, 1.0)},
-	{"name":"runner", "hp":24.0, "speed":72.0, "damage":4.0, "color":Color(0.55, 0.92, 0.38, 1.0)},
-	{"name":"tank", "hp":110.0, "speed":28.0, "damage":7.0, "color":Color(0.48, 0.58, 0.72, 1.0)},
-	{"name":"spitter", "hp":46.0, "speed":35.0, "damage":5.0, "color":Color(0.32, 0.88, 0.52, 1.0)},
-	{"name":"boomer", "hp":30.0, "speed":55.0, "damage":10.0, "color":Color(1.0, 0.78, 0.22, 1.0)},
-	{"name":"guard", "hp":64.0, "speed":33.0, "damage":5.0, "color":Color(0.38, 0.62, 1.0, 1.0)},
-	{"name":"summoner", "hp":58.0, "speed":30.0, "damage":4.0, "color":Color(0.72, 0.42, 1.0, 1.0)},
-	{"name":"charger", "hp":52.0, "speed":60.0, "damage":7.0, "color":Color(1.0, 0.35, 0.58, 1.0)},
-	{"name":"shade", "hp":70.0, "speed":48.0, "damage":6.0, "color":Color(0.58, 0.62, 0.82, 1.0)},
-	{"name":"elite", "hp":220.0, "speed":40.0, "damage":10.0, "color":Color(0.98, 0.18, 0.2, 1.0)}
+	{"name":"grunter", "hp":38.0, "speed":58.0, "damage":4.0, "color":Color(0.72, 0.58, 0.98, 1.0)},
+	{"name":"runner", "hp":24.0, "speed":98.0, "damage":4.0, "color":Color(0.42, 1.0, 0.48, 1.0)},
+	{"name":"tank", "hp":110.0, "speed":38.0, "damage":7.0, "color":Color(0.52, 0.62, 0.88, 1.0)},
+	{"name":"spitter", "hp":46.0, "speed":48.0, "damage":5.0, "color":Color(0.28, 0.95, 0.62, 1.0)},
+	{"name":"boomer", "hp":30.0, "speed":74.0, "damage":10.0, "color":Color(1.0, 0.72, 0.18, 1.0)},
+	{"name":"guard", "hp":64.0, "speed":46.0, "damage":5.0, "color":Color(0.35, 0.68, 1.0, 1.0)},
+	{"name":"summoner", "hp":58.0, "speed":42.0, "damage":4.0, "color":Color(0.82, 0.38, 1.0, 1.0)},
+	{"name":"charger", "hp":52.0, "speed":84.0, "damage":7.0, "color":Color(1.0, 0.32, 0.52, 1.0)},
+	{"name":"shade", "hp":70.0, "speed":66.0, "damage":6.0, "color":Color(0.62, 0.66, 0.95, 1.0)},
+	{"name":"elite", "hp":220.0, "speed":56.0, "damage":10.0, "color":Color(1.0, 0.22, 0.28, 1.0)}
 ]
 
 ## 局外「战备碎片」：胜利按地图阶递增；失败少量参与奖（原创数值，非内购）
@@ -198,10 +204,10 @@ const META_PERMANENT_UPGRADES := {
 }
 
 const MAP_TEMPLATES := [
-	{"id":"city_ruins", "title": "第1区·废墟禁区", "spawn_radius_min":620.0, "spawn_radius_max":980.0, "ranged_weight":0.18, "xp_pickup_mul": 1.0, "hint": "废墟：刷怪圈略远，适合拉扯与磁吸走位。"},
-	{"id":"lab_corridor", "title": "第2区·实验廊道", "spawn_radius_min":600.0, "spawn_radius_max":900.0, "ranged_weight":0.32, "xp_pickup_mul": 1.0, "hint": "廊道：远程比重略高，优先找掩体与冲刺穿缝。"},
-	{"id":"desert_border", "title": "第3区·荒漠边境", "spawn_radius_min":700.0, "spawn_radius_max":1060.0, "ranged_weight":0.24, "xp_pickup_mul": 1.0, "hint": "边境：开阔图，冲刺与走位空间更大。"},
-	{"id":"rain_quarters", "title": "第4区·雨巷补给", "spawn_radius_min":580.0, "spawn_radius_max":940.0, "ranged_weight":0.26, "xp_pickup_mul": 1.08, "hint": "雨巷区：经验球+8%，更利快速成型。"}
+	{"id":"city_ruins", "title": "第1区·废墟禁区", "spawn_radius_min":380.0, "spawn_radius_max":620.0, "ranged_weight":0.18, "xp_pickup_mul": 1.0, "hint": "废墟：刷怪圈略远，适合拉扯与磁吸走位。"},
+	{"id":"lab_corridor", "title": "第2区·实验廊道", "spawn_radius_min":360.0, "spawn_radius_max":580.0, "ranged_weight":0.32, "xp_pickup_mul": 1.0, "hint": "廊道：远程比重略高，优先找掩体与冲刺穿缝。"},
+	{"id":"desert_border", "title": "第3区·荒漠边境", "spawn_radius_min":420.0, "spawn_radius_max":660.0, "ranged_weight":0.24, "xp_pickup_mul": 1.0, "hint": "边境：开阔图，冲刺与走位空间更大。"},
+	{"id":"rain_quarters", "title": "第4区·雨巷补给", "spawn_radius_min":340.0, "spawn_radius_max":600.0, "ranged_weight":0.26, "xp_pickup_mul": 1.08, "hint": "雨巷区：经验球+8%，更利快速成型。"}
 ]
 
 ## 一句话主题（R12 语气：赛博简报 / 冷硬短句）
@@ -282,9 +288,11 @@ const CRIT_MULTIPLIER := 2.0
 const BASE_CRIT_CHANCE := 0.05  # 5%基础暴击率
 
 # 中BOSS配置
-const MINI_BOSS_TIMES := [300, 600, 900]  # 5分钟, 10分钟, 15分钟
+const MINI_BOSS_TIMES := [300, 480, 720]  # 5 / 8 / 12 分钟（首领 15 分前）
 const MINI_BOSS_HP_SCALE := 3.5
 const MINI_BOSS_DMG_SCALE := 2.0
+const MINI_BOSS_FIRST_HP_SCALE := 4.2
+const MINI_BOSS_FIRST_DMG_SCALE := 2.15
 
 # ========== BOSS类型定义 ==========
 # 0: 暗影巨兽 (默认) - 均衡型
@@ -335,6 +343,7 @@ const HEALING_REWARDS := [
 const ASSET_PACK_ROOT := "res://assets/game_pack/"
 const ASSET_PACK_TEXTURES := ASSET_PACK_ROOT + "textures/"
 const ASSET_PACK_PROJECTILES := ASSET_PACK_ROOT + "vfx/projectiles/"
+const ASSET_PACK_KENNEY := "res://assets/vendor/kenney_particle_pack/"
 const ASSET_PACK_PARTICLES := ASSET_PACK_ROOT + "vfx/particles/"
 const ASSET_PACK_SFX := ASSET_PACK_ROOT + "sfx/"
 const ASSET_PACK_SFX_VARIANTS := ASSET_PACK_SFX + "variants/"

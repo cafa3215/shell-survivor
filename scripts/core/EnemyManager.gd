@@ -36,6 +36,8 @@ var _special_cd: PackedFloat32Array
 var _stun_time: PackedFloat32Array
 var _ai_phase: PackedFloat32Array
 var _charger_windup: PackedFloat32Array
+var _spitter_windup: PackedFloat32Array
+var _weapon_telegraph: Node = null
 var _last_bucket_count := 4
 var _player_retries := 0
 var _enemy_uses_atlas := false
@@ -50,6 +52,7 @@ var _enemy_speed_scale := 1.0
 
 # ========== 被动效果相关 ==========
 var _freeze_time: PackedFloat32Array  # 冰冻时间
+var _visual_scale_mul: PackedFloat32Array
 
 # 高威胁击杀确认（低噪声）：节流 + 简短提示
 var _threat_kill_cd := 0.0
@@ -73,6 +76,8 @@ const BOOMER_EXPLODE_RADIUS := 26.0
 const SPITTER_KEEP_DIST := 120.0
 const SPITTER_FIRE_DIST := 260.0
 const CHARGER_DASH_RANGE := 220.0
+const SPITTER_WINDUP_SEC := 0.30
+const CHARGER_WINDUP_MAX := 0.16
 const STUN_RANGE := 96.0
 const BOSS_CONTACT_RADIUS := 34.0
 const BOSS_CONTACT_DMG := 16.0
@@ -94,7 +99,11 @@ func _ready() -> void:
 	_stun_time.resize(GameDB.ENEMY_MAX)
 	_ai_phase.resize(GameDB.ENEMY_MAX)
 	_charger_windup.resize(GameDB.ENEMY_MAX)
+	_spitter_windup.resize(GameDB.ENEMY_MAX)
 	_freeze_time.resize(GameDB.ENEMY_MAX)
+	_visual_scale_mul.resize(GameDB.ENEMY_MAX)
+	for _vi in GameDB.ENEMY_MAX:
+		_visual_scale_mul[_vi] = 1.0
 	_pool_alive_pos.resize(GameDB.ENEMY_MAX)
 	for _pi in GameDB.ENEMY_MAX:
 		_pool_alive_pos[_pi] = -1
@@ -122,14 +131,20 @@ func _ready() -> void:
 		_mm.set_instance_transform_2d(i, Transform2D(0.0, Vector2(-99999, -99999)))
 		_mm.set_instance_color(i, Color(1, 1, 1, 0))
 		_mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
-	# 在玩家附近生成敌人（保持安全距离）
+	# 开局不预铺尸潮；等 game_started 后再少量入场（见 _on_game_started）
+	if not EventBus.game_started.is_connected(_on_game_started):
+		EventBus.game_started.connect(_on_game_started)
+
+
+func _on_game_started() -> void:
 	var spawn_center := Vector2.ZERO
 	if _player != null:
 		spawn_center = _player.global_position
-	for _i in 200:
+	var initial := 4 if Settings.quality == Settings.Quality.LOW else 5
+	for _i in initial:
 		var angle := randf() * TAU
-		var dist := randf_range(400.0, 800.0)
-		spawn_enemy(spawn_center + Vector2(cos(angle), sin(angle)) * dist, randi() % 3)
+		var dist := randf_range(620.0, 920.0)
+		spawn_enemy(spawn_center + Vector2(cos(angle), sin(angle)) * dist, randi() % 2)
 
 func _resolve_player_node() -> Node2D:
 	var p := get_parent().get_node_or_null(^"Player") as Node2D
@@ -183,9 +198,9 @@ func _process(delta: float) -> void:
 	
 	# 更新敌人属性缩放（随时间增长）
 	_elapsed_minutes_cache = elapsed_minutes()
-	_enemy_hp_scale = 1.0 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_HP_SCALE_PER_MIN
-	_enemy_dmg_scale = 1.0 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_DMG_SCALE_PER_MIN
-	_enemy_speed_scale = 1.0 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_SPEED_SCALE_PER_MIN
+	_enemy_hp_scale = 1.12 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_HP_SCALE_PER_MIN
+	_enemy_dmg_scale = 1.08 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_DMG_SCALE_PER_MIN
+	_enemy_speed_scale = 1.02 + _elapsed_minutes_cache * GameDB.ENDLESS_ENEMY_SPEED_SCALE_PER_MIN
 	
 	grid.clear()
 	# 双缓冲 active_indices：清空后重用
@@ -201,6 +216,13 @@ func _process(delta: float) -> void:
 			continue
 		active_indices.append(i)
 		_buckets[i % bucket_count].append(i)
+	# 超远距离敌人降频收拢，避免站在边缘时怪群「停住不追」
+	if _frame % 3 == 0:
+		for i in _pool_alive_list:
+			if positions[i].distance_to(p) <= GameDB.ACTIVE_RADIUS_PX * 0.88:
+				continue
+			var dir_far := (p - positions[i]).normalized()
+			positions[i] += dir_far * speed[i] * delta * 3.0
 	var update_bucket := _frame % bucket_count
 	for i in _buckets[update_bucket]:
 		# 冰冻效果
@@ -225,11 +247,16 @@ func _process(delta: float) -> void:
 					positions[i] += (-dir + side * strafe_mul * 0.7).normalized() * speed[i] * 0.8 * delta
 				else:
 					positions[i] += side * speed[i] * 0.28 * delta * sin(_ai_phase[i] * 2.6)
-				# 后期spitter攻击更频繁
+				# 后期spitter攻击更频繁；发射前短蓄力（与冲锋者同色预警，提升中盘可读性）
 				var spitter_cd: float = 1.4 - min(_elapsed_minutes_cache * 0.02, 0.4)
-				if d < SPITTER_FIRE_DIST and _special_cd[i] <= 0.0:
-					_special_cd[i] = spitter_cd
-					_player_take_damage(damage[i] * 0.8)
+				if _spitter_windup[i] > 0.0:
+					_spitter_windup[i] = maxf(_spitter_windup[i] - delta, 0.0)
+					if _spitter_windup[i] <= 0.0 and d < SPITTER_FIRE_DIST:
+						_player_take_damage(damage[i] * 0.8)
+						_special_cd[i] = spitter_cd
+				elif d < SPITTER_FIRE_DIST and _special_cd[i] <= 0.0:
+					_spitter_windup[i] = SPITTER_WINDUP_SEC
+					_queue_enemy_telegraph_mark(positions[i], SPITTER_WINDUP_SEC)
 			4: # boomer: explode in close range
 				positions[i] += dir * speed[i] * 1.1 * delta
 				if positions[i].distance_to(p) < BOOMER_EXPLODE_RADIUS:
@@ -259,7 +286,9 @@ func _process(delta: float) -> void:
 					positions[i] += dir * speed[i] * 0.34 * delta
 				elif _special_cd[i] <= 0.0 and positions[i].distance_to(p) < CHARGER_DASH_RANGE:
 					_special_cd[i] = charger_cd
-					_charger_windup[i] = 0.16 if _elapsed_minutes_cache < 9.0 else 0.12
+					var wind := 0.16 if _elapsed_minutes_cache < 9.0 else 0.12
+					_charger_windup[i] = wind
+					_queue_enemy_telegraph_mark(positions[i], wind)
 				else:
 					var dash_mul: float = (2.7 + minf(_elapsed_minutes_cache * 0.04, 0.7)) if _special_cd[i] > charger_cd - 0.08 else 1.0
 					positions[i] += dir * speed[i] * dash_mul * delta
@@ -275,17 +304,17 @@ func _process(delta: float) -> void:
 				var side_mul := 0.0
 				match k:
 					0:
-						forward_mul = 0.95
-						side_mul = 0.22
+						forward_mul = 1.08
+						side_mul = 0.16
 					1:
-						forward_mul = 1.15
-						side_mul = 0.12
+						forward_mul = 1.22
+						side_mul = 0.10
 					2:
-						forward_mul = 0.82
-						side_mul = 0.28
+						forward_mul = 0.92
+						side_mul = 0.22
 					5:
-						forward_mul = 0.9
-						side_mul = 0.24
+						forward_mul = 1.0
+						side_mul = 0.18
 					_:
 						forward_mul = 1.0
 						side_mul = 0.16
@@ -312,12 +341,16 @@ func _process(delta: float) -> void:
 		var flash := 1.0 if hp_ratio > 0.3 else (0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.02))
 		var dist_to_p := positions[i].distance_to(p)
 		var rot := (positions[i] - p).angle() if dist_to_p > 1.0 else 0.0
+		enemy_scale *= _visual_scale_mul[i]
 		_mm.set_instance_transform_2d(i, Transform2D(rot, Vector2(enemy_scale, enemy_scale), 0.0, positions[i]))
 		var base_color: Color = GameDB.ENEMY_TYPES[k]["color"]
 		var tint := Color(base_color.r * flash, base_color.g * flash, base_color.b * flash, 1.0)
 		if k == 7 and _charger_windup[i] > 0.0:
-			var pwr := clampf(_charger_windup[i] / 0.16, 0.0, 1.0)
+			var pwr := clampf(_charger_windup[i] / CHARGER_WINDUP_MAX, 0.0, 1.0)
 			tint = tint.lerp(Color(1.0, 0.42, 0.25, 1.0), 0.6 + 0.35 * pwr)
+		elif k == 3 and _spitter_windup[i] > 0.0:
+			var sp_pwr := clampf(_spitter_windup[i] / SPITTER_WINDUP_SEC, 0.0, 1.0)
+			tint = tint.lerp(Color(1.0, 0.48, 0.22, 1.0), 0.52 + 0.38 * sp_pwr)
 		if Settings.high_contrast_targets and (k == 3 or k == 6 or k == 7 or k == 9):
 			var pulse := 0.82 + 0.18 * sin(Time.get_ticks_msec() * 0.013 + float(i))
 			tint = tint.lerp(Color(1.0, 0.92, 0.35, 1.0), 0.24)
@@ -327,9 +360,9 @@ func _process(delta: float) -> void:
 		var readability_mul := _readability_enemy_suppression()
 		near_t *= readability_mul
 		var hsv_h := tint.h
-		var hsv_s := maxf(0.0, tint.s * lerpf(0.8, 0.44, near_t))
-		var hsv_v := tint.v * lerpf(0.88, 0.58, near_t)
-		var alpha := lerpf(0.94, 0.46, near_t)
+		var hsv_s := maxf(0.0, tint.s * lerpf(0.94, 0.62, near_t))
+		var hsv_v := tint.v * lerpf(0.96, 0.68, near_t)
+		var alpha := lerpf(0.96, 0.58, near_t)
 		tint = Color.from_hsv(hsv_h, hsv_s, hsv_v, alpha)
 		_mm.set_instance_color(i, tint)
 	_update_boss(delta)
@@ -343,6 +376,23 @@ func elapsed_minutes() -> float:
 	if game and "elapsed" in game:
 		return float(game.get("elapsed")) / 60.0
 	return 0.0
+
+
+func _resolve_weapon_telegraph() -> Node:
+	if _weapon_telegraph != null and is_instance_valid(_weapon_telegraph):
+		return _weapon_telegraph
+	var game := get_parent()
+	if game == null:
+		return null
+	_weapon_telegraph = game.get_node_or_null("WeaponTelegraph")
+	return _weapon_telegraph
+
+
+func _queue_enemy_telegraph_mark(pos: Vector2, duration: float) -> void:
+	var tg := _resolve_weapon_telegraph()
+	if tg == null or not tg.has_method("add_lightning_mark"):
+		return
+	tg.call("add_lightning_mark", pos, 34.0, maxf(0.08, duration))
 
 
 func get_threat_targets(max_n: int = 6) -> Array[Dictionary]:
@@ -371,8 +421,18 @@ func _build_threat_targets(max_n: int) -> Array[Dictionary]:
 		if not (k == 3 or k == 6 or k == 7 or k == 9):
 			continue
 		var d := positions[i].distance_to(p)
-		out.append({"pos": positions[i], "kind": k, "dist": d, "tag": ("boss" if k == 9 else "threat")})
-	out.sort_custom(func(a, b): return float(a.get("dist", 0.0)) < float(b.get("dist", 0.0)))
+		var imminent := (k == 7 and _charger_windup[i] > 0.0) or (k == 3 and _spitter_windup[i] > 0.0)
+		out.append({
+			"pos": positions[i], "kind": k, "dist": d,
+			"tag": ("boss" if k == 9 else "threat"), "imminent": imminent
+		})
+	out.sort_custom(func(a, b):
+		var ai := 1 if bool(a.get("imminent", false)) else 0
+		var bi := 1 if bool(b.get("imminent", false)) else 0
+		if ai != bi:
+			return ai > bi
+		return float(a.get("dist", 0.0)) < float(b.get("dist", 0.0))
+	)
 	if out.size() > max_n:
 		out = out.slice(0, max_n)
 	return out
@@ -387,17 +447,19 @@ func spawn_enemy(pos: Vector2, kind_id: int = 0) -> int:
 	kind[idx] = kind_id
 	# 应用属性缩放
 	hp[idx] = float(cfg["hp"]) * _enemy_hp_scale
-	speed[idx] = (float(cfg["speed"]) + randf_range(-4.0, 6.0)) * _enemy_speed_scale
+	speed[idx] = (float(cfg["speed"]) + randf_range(-4.0, 6.0)) * _enemy_speed_scale * GameDB.ENEMY_SPEED_GLOBAL_MUL
 	damage[idx] = float(cfg["damage"]) * _enemy_dmg_scale
 	_special_cd[idx] = randf_range(0.0, 1.4)
 	_stun_time[idx] = 0.0
 	_ai_phase[idx] = randf() * TAU
 	_charger_windup[idx] = 0.0
+	_spitter_windup[idx] = 0.0
 	_freeze_time[idx] = 0.0
-	var var_slot: int = kind_id % 4
+	_visual_scale_mul[idx] = 1.0
+	var atlas_slot: int = _enemy_atlas_slot(kind_id)
 	_mm.set_instance_custom_data(
 		idx,
-		Color(float(var_slot) / 3.0, float(kind_id) / 9.0, randf() * 0.45 + 0.35, 1.0)
+		Color(float(atlas_slot) / 3.0, float(kind_id) / 9.0, randf() * 0.45 + 0.35, 1.0)
 	)
 	_mm.set_instance_transform_2d(idx, Transform2D(0.0, positions[idx]))
 	# 首帧 _process 之前也要可见；否则实例色保持 _ready 里 alpha=0 会整段「无怪」
@@ -405,6 +467,15 @@ func spawn_enemy(pos: Vector2, kind_id: int = 0) -> int:
 	_mm.set_instance_color(idx, Color(base_color.r, base_color.g, base_color.b, 1.0))
 	_register_pool_alive(idx)
 	return idx
+
+
+func mark_mini_boss(idx: int, wave_index: int) -> void:
+	if idx < 0 or idx >= GameDB.ENEMY_MAX:
+		return
+	_visual_scale_mul[idx] = 1.42 if wave_index == 0 else 1.24
+	var k := kind[idx]
+	var base_color: Color = GameDB.ENEMY_TYPES[k]["color"]
+	_mm.set_instance_color(idx, base_color.lerp(Color(1.0, 0.35, 0.28, 1.0), 0.35))
 
 # ============================================
 # SpatialGrid 加速的伤害查询
@@ -528,6 +599,7 @@ func kill_enemy(i: int, hit_power: float = 0.0, crit_kill: bool = false, killing
 	_mm.set_instance_transform_2d(i, Transform2D(0.0, Vector2(-99999, -99999)))
 	_mm.set_instance_color(i, Color(1, 1, 1, 0))
 	_mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
+	_visual_scale_mul[i] = 1.0
 	pool.release(i)
 	var kind_name := StringName(str(GameDB.ENEMY_TYPES[k]["name"]))
 	EventBus.enemy_killed.emit(kind_name)
@@ -875,13 +947,12 @@ func _emit_kill_feedback(pos: Vector2, k: int, hit_power: float, crit_kill: bool
 	match tier:
 		&"threat":
 			EventBus.play_sfx.emit(&"explosion", pos)
-			EventBus.play_sfx.emit(&"hit", pos)
 		&"crit":
 			EventBus.play_sfx.emit(&"hit", pos)
 			if _combo_kill_count >= 3:
 				EventBus.play_sfx.emit(&"lightning", pos)
 		_:
-			EventBus.play_sfx.emit(&"hit", pos)
+			pass  # 普通击杀不播 hit，减少刺耳连击
 
 # 闪电链技能 - 雷霆领主特殊技能
 func boss_lightning_chain() -> void:
@@ -911,6 +982,18 @@ func _apply_lightning_chain(pos: Vector2, jumps: int) -> void:
 		if i < targets - 1:
 			_apply_lightning_chain(positions[e_idx], 1)
 
+func _enemy_atlas_slot(kind_id: int) -> int:
+	match kind_id:
+		0, 1:
+			return 0
+		2, 5:
+			return 1
+		3, 4:
+			return 2
+		_:
+			return 3
+
+
 func _resolve_enemy_texture() -> Texture2D:
 	var atlas_img: Image = GameDB.load_png_if_exists(GameDB.TEX_GEN_ENEMY_ATLAS)
 	# Shader 假定横向 4 格、格为正方形：宽必须等于 4×高，否则 UV 错乱 → 中心大块杂色
@@ -920,8 +1003,8 @@ func _resolve_enemy_texture() -> Texture2D:
 		if ah > 0 and aw == 4 * ah:
 			_enemy_uses_atlas = true
 			return ImageTexture.create_from_image(atlas_img)
-	_enemy_uses_atlas = false
-	return _make_enemy_texture()
+	_enemy_uses_atlas = true
+	return _make_procedural_enemy_atlas()
 
 func _make_enemy_shader() -> Shader:
 	var code := "
@@ -949,7 +1032,7 @@ void fragment() {
 	vec3 rim_rgb = vec3(0.08, 0.28, 0.42) * rim * (0.4 + v_cust.y * 0.5);
 	// 保留贴图明暗，再用实例色偏染（避免 t≈灰白时整张贴成纯色块）
 	vec3 tint = COLOR.rgb;
-	vec3 lit = mix(t.rgb, t.rgb * tint, 0.58);
+	vec3 lit = mix(t.rgb, t.rgb * tint, 0.72);
 	// 暗部冷色、亮部略提（增加立体感，避免糊成一片）
 	float luma = dot(lit, vec3(0.299, 0.587, 0.114));
 	lit = mix(lit * vec3(0.92, 0.97, 1.05), lit + vec3(0.04, 0.05, 0.06), smoothstep(0.15, 0.65, luma));
@@ -961,17 +1044,67 @@ void fragment() {
 	s.code = code
 	return s
 
-func _make_enemy_texture() -> Texture2D:
-	var gen_img: Image = GameDB.load_png_if_exists(GameDB.TEX_GEN_ENEMY_BASE)
-	if gen_img != null:
-		return ImageTexture.create_from_image(gen_img)
-	# 64x64 Q 版丧尸基底：粗黑描边 + 大眼（弹壳式），由 MultiMesh 实例色染色
-	var size := 64
-	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
+func _make_procedural_enemy_atlas() -> Texture2D:
+	var frame := 64
+	var atlas := Image.create(frame * 4, frame, false, Image.FORMAT_RGBA8)
+	atlas.fill(Color(0, 0, 0, 0))
+	var styles: PackedStringArray = ["walker", "runner", "brute", "caster"]
+	for i in styles.size():
+		var cell := Image.create(frame, frame, false, Image.FORMAT_RGBA8)
+		cell.fill(Color(0, 0, 0, 0))
+		_draw_enemy_silhouette(cell, styles[i])
+		atlas.blit_rect(cell, Rect2i(0, 0, frame, frame), Vector2i(i * frame, 0))
+	return ImageTexture.create_from_image(atlas)
+
+
+func _draw_enemy_silhouette(img: Image, style: String) -> void:
+	var size := img.get_width()
 	var cx := float(size) / 2.0
 	var cy := float(size) / 2.0 + 2.0
-	
+	var outline := Color(0.05, 0.05, 0.08, 1.0)
+	var body := Color(0.94, 0.92, 0.98, 1.0)
+	var dark := Color(0.58, 0.54, 0.66, 1.0)
+	var accent := Color(0.82, 0.52, 0.4, 1.0)
+	match style:
+		"runner":
+			cx += 2.0
+			_fill_ellipse(img, cx, cy + 18.0, 5.0, 2.0, Color(0, 0, 0, 0.32))
+			for y in range(int(cy - 2.0), int(cy + 14.0)):
+				var w := 4.0 + absf(float(y) - cy) * 0.15
+				for x in range(int(cx - w), int(cx + w + 1.0)):
+					if x >= 0 and x < size and y >= 0 and y < size:
+						img.set_pixel(x, y, outline if absf(float(x) - cx) > w - 1.2 else dark)
+			_fill_circle(img, cx + 5.0, cy - 10.0, 7.0, body)
+			_fill_circle(img, cx + 7.0, cy - 12.0, 2.2, Color(0.1, 0.1, 0.14, 1.0))
+			for side in [-1.0, 1.0]:
+				_fill_triangle(img, cx + side * 8.0, cy + 2.0, cx + side * 14.0, cy + 8.0, cx + side * 6.0, cy + 10.0, accent)
+		"brute":
+			_fill_ellipse(img, cx, cy + 20.0, 12.0, 3.5, Color(0, 0, 0, 0.35))
+			_fill_ellipse(img, cx, cy + 4.0, 16.0, 14.0, outline)
+			_fill_ellipse(img, cx, cy + 4.0, 14.0, 12.0, dark)
+			_fill_ellipse(img, cx - 3.0, cy + 1.0, 10.0, 8.0, body)
+			_fill_circle(img, cx, cy - 10.0, 6.0, body)
+			_fill_circle(img, cx - 3.0, cy - 11.0, 1.8, Color(0.1, 0.1, 0.14, 1.0))
+			_fill_circle(img, cx + 3.0, cy - 11.0, 1.8, Color(0.1, 0.1, 0.14, 1.0))
+			for side in [-1.0, 1.0]:
+				_fill_ellipse(img, cx + side * 14.0, cy + 6.0, 5.0, 8.0, dark)
+		"caster":
+			_fill_ellipse(img, cx, cy + 18.0, 8.0, 2.5, Color(0, 0, 0, 0.32))
+			_fill_circle(img, cx, cy + 2.0, 13.0, outline)
+			_fill_circle(img, cx, cy + 2.0, 11.0, body)
+			_fill_circle(img, cx, cy - 8.0, 5.0, dark)
+			_fill_triangle(img, cx, cy - 16.0, cx - 4.0, cy - 22.0, cx + 4.0, cy - 22.0, accent)
+			_fill_circle(img, cx - 9.0, cy - 2.0, 3.0, Color(0.45, 0.82, 0.42, 0.85))
+			_fill_circle(img, cx + 9.0, cy - 2.0, 3.0, Color(0.45, 0.82, 0.42, 0.85))
+		_:  # walker
+			_make_enemy_texture_into(img)
+	_anti_alias_edges(img)
+
+
+func _make_enemy_texture_into(img: Image) -> void:
+	var size := img.get_width()
+	var cx := float(size) / 2.0
+	var cy := float(size) / 2.0 + 2.0
 	var body := Color(0.94, 0.92, 0.98, 1.0)
 	var dark := Color(0.58, 0.54, 0.66, 1.0)
 	var light := Color(0.99, 0.98, 1.0, 1.0)
@@ -1081,7 +1214,16 @@ func _make_enemy_texture() -> Texture2D:
 	
 	# 边缘抗锯齿
 	_anti_alias_edges(img)
-	
+
+
+func _make_enemy_texture() -> Texture2D:
+	var gen_img: Image = GameDB.load_png_if_exists(GameDB.TEX_GEN_ENEMY_BASE)
+	if gen_img != null:
+		return ImageTexture.create_from_image(gen_img)
+	var size := 64
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	_make_enemy_texture_into(img)
 	return ImageTexture.create_from_image(img)
 
 func _fill_circle(img: Image, cx: float, cy: float, radius: float, col: Color, bottom_half := false) -> void:
@@ -1300,11 +1442,11 @@ func _player_take_damage(amount: float) -> void:
 func _readability_enemy_suppression() -> float:
 	match int(Settings.readability_preset):
 		Settings.ReadabilityPreset.LOW:
-			return 0.45
+			return 0.55
 		Settings.ReadabilityPreset.HIGH:
 			return 1.0
 		_:
-			return 0.72
+			return 0.9
 
 # ============================================
 # 资源清理 - 防止MultiMesh和SpatialGrid泄漏

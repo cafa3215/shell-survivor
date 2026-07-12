@@ -14,6 +14,7 @@ const REQUIRED_AUTOLOADS: PackedStringArray = [
 	"MetaProgress",
 	"AudioManager",
 	"InputManager",
+	"NotificationSystem",
 ]
 
 const REQUIRED_MAIN_NODES: PackedStringArray = [

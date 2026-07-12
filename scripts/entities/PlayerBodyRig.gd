@@ -61,7 +61,7 @@ enum MotionDetailPreset { LIGHT, MEDIUM, STRONG }
 
 func _ready() -> void:
 	_build_rig()
-	set_form(RigForm.BASE)
+	call_deferred("set_form", RigForm.BASE)
 
 
 func set_form(form: RigForm) -> void:
@@ -99,10 +99,9 @@ func _build_rig() -> void:
 	# 进一步提升占屏与清晰度：在战斗密集场景中保持主体可辨识。
 	_visual_scale = 1.78
 
-	# 根骨：髋（俯视重心）
+	# 先在离树状态搭好完整骨骼链，再一次性挂到 Skeleton2D，避免逐段 add_child 触发无效 rest 逆变换。
 	_hip = Bone2D.new()
 	_hip.name = "Hip"
-	_skeleton.add_child(_hip)
 
 	_spine = _add_bone(_hip, "Spine", Vector2(0, -10))
 	_chest = _add_bone(_spine, "Chest", Vector2(0, -10))
@@ -125,7 +124,9 @@ func _build_rig() -> void:
 	_leg_r_u = _add_bone(_hip, "LegRU", Vector2(6, 7))
 	_leg_r_l = _add_bone(_leg_r_u, "LegRL", Vector2(0, 9))
 
-	_skin_polygons()
+	_skeleton.add_child(_hip)
+	_snap_bone_rests(_hip)
+	call_deferred("_skin_polygons")
 	z_index = 2
 
 
@@ -135,6 +136,13 @@ func _add_bone(parent: Bone2D, bone_name: String, rel: Vector2) -> Bone2D:
 	b.position = rel
 	parent.add_child(b)
 	return b
+
+
+func _snap_bone_rests(root: Bone2D) -> void:
+	for child in root.get_children():
+		if child is Bone2D:
+			_snap_bone_rests(child as Bone2D)
+	root.rest = root.transform
 
 
 func _skin_polygons() -> void:

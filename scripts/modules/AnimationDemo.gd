@@ -6,7 +6,7 @@ extends "res://scripts/modules/ModuleDemoBase.gd"
 @onready var _player := $Player as Node2D
 
 var _rig: PlayerBodyRig
-var _t := 0.0
+var _anim_t := 0.0
 var _last_seg := -1
 var _punched_in_cycle := false
 
@@ -51,10 +51,10 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if _rig == null or not is_instance_valid(_rig):
 		return
-	_t += delta
+	_anim_t += delta
 	# 约 12 秒一圈：与骨骼演示接近，但强调“时间分段 + 事件点”
 	var cyc: float = 12.0
-	var u := fposmod(_t, cyc)
+	var u := fposmod(_anim_t, cyc)
 	var seg: int
 	if u < 2.0:
 		seg = 0

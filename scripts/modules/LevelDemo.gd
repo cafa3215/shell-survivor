@@ -80,10 +80,12 @@ func module_self_test() -> bool:
 	if _agent == null:
 		return false
 	_agent.target_position = _waypoints[mini(1, _waypoints.size() - 1)]
-	NavigationServer2D.map_force_sync(map_rid)
-	if _agent.get_current_navigation_path().is_empty():
-		return false
-	return true
+	NavigationServer2D.map_set_use_async_iterations(map_rid, false)
+	NavigationServer2D.map_force_update(map_rid)
+	var path: PackedVector2Array = NavigationServer2D.map_get_path(
+		map_rid, _waypoints[0], _waypoints[mini(1, _waypoints.size() - 1)], true
+	)
+	return not path.is_empty()
 
 func _physics_process(delta: float) -> void:
 	if _walker == null or _agent == null:

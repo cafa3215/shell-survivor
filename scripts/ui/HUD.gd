@@ -77,17 +77,6 @@ var _damage_refresh_tick := 0.0
 var _damage_mode := 0 # 0=总伤害, 1=首领伤害
 var _damage_mode_btn: Button = null
 var _damage_trend_samples: Array[Dictionary] = []
-var _combat_evt_label: Label = null
-var _combat_last_skill_id: String = "-"
-var _combat_last_cast_seq := 0
-var _combat_last_hit_count := 0
-var _combat_last_evt: String = "-"
-var _combat_last_evt_ts := 0
-var _combat_evt_history: Array[String] = []
-var _combat_filter_current_cast := true
-var _combat_focus_cast_seq := 0
-var _combat_cast_start_ts := 0
-var _combat_cast_hit_count := 0
 var _skill_eff_recent_mode := false
 var _skill_eff_mode_btn: Button = null
 var _skill_eff_sort_mode := "casts"
@@ -113,6 +102,11 @@ const _HUD_SKILL_EFF_DEFAULT_CFG := {
 }
 var _hud_skill_eff_cfg: Dictionary = {}
 const _HUD_DAMAGE_PANEL_CONFIG_PATH := "res://assets/config/hud_damage_panel.json"
+const _TOP_ACTION_TOP := 10.0
+const _TOP_ACTION_HEIGHT := 44.0
+const _TOP_ACTION_RIGHT_MARGIN := 16.0
+const _TOP_ACTION_GAP := 8.0
+const _TOP_ACTION_ROW_BOTTOM := _TOP_ACTION_TOP + _TOP_ACTION_HEIGHT
 const _WEAPON_CARRIER_CONFIG_PATH := "res://assets/config/weapon_carrier_cards.json"
 const _HUD_DAMAGE_PANEL_DEFAULT_CFG := {
 	"trend_up_delta": 120.0,
@@ -130,6 +124,7 @@ var _weapon_carrier_panel: PanelContainer = null
 var _weapon_carrier_grid: GridContainer = null
 var _weapon_card_items: Array[Dictionary] = []
 var _weapon_card_fx_t := 0.0
+var _goal_label: Label = null
 
 func _process(delta: float) -> void:
 	_update_damage_panel(delta)
@@ -140,9 +135,9 @@ func _process(delta: float) -> void:
 		_refresh_relic_hud_line()
 	var dbg := Settings.debug_hud
 	if fps_label:
-		fps_label.visible = dbg
+		fps_label.visible = false
 	if perf_label:
-		perf_label.visible = dbg
+		perf_label.visible = false
 	if dbg and fps_label and _hud_perf_tick % 10 == 0:
 		fps_label.text = "帧率: %d" % Engine.get_frames_per_second()
 	if _aim_touch_id == -1:
@@ -152,16 +147,6 @@ func _process(delta: float) -> void:
 			InputManager.set_aim_vector(Vector2.ZERO, false, 0.0)
 		else:
 			InputManager.set_aim_vector(_aim_vec, true, clampf(_aim_vec.length(), 0.0, 1.0))
-	var game := get_parent()
-	if dbg and perf_label and _hud_perf_tick % 15 == 0 and game != null and game.has_node("EnemyManager"):
-		var em := game.get_node("EnemyManager")
-		perf_label.text = "活跃:%d  桶:%d  池:%d  方向:%.2f  经验:%.2f" % [
-			int(em.debug_active_count()),
-			int(em.debug_bucket_count()),
-			int(em.debug_pool_used()),
-			_director_mul,
-			_xp_mul
-		]
 	if _boss_alive:
 		if boss_container and boss_phase and boss_hp_percent and boss_bar_fill:
 			if boss_label:
@@ -178,8 +163,6 @@ func _process(delta: float) -> void:
 	damage_flash.visible = low_hp_alpha > 0.0
 	if threat_edge:
 		threat_edge.visible = (not dbg) and Settings.high_contrast_targets
-	if _combat_evt_label:
-		_combat_evt_label.visible = dbg
 
 func set_hp(hp: float, max_hp: float) -> void:
 	if hp_label:
@@ -229,15 +212,20 @@ func set_director_info(director_mul: float, xp_mul: float, elapsed_sec: float = 
 		enemy_icon.visible = show_counts
 	if enemy_label:
 		enemy_label.visible = show_counts
+	if threat_edge and threat_edge.has_method("set_relief_ratio"):
+		threat_edge.set_relief_ratio(_pressure_relief_ratio)
 
 func set_boss_info(alive: bool, hp_ratio: float, phase: int) -> void:
 	_boss_alive = alive
 	_boss_ratio = hp_ratio
 	_boss_phase = phase
 
-func set_xp(current_xp: int, needed: int) -> void:
+func set_xp(current_xp: int, needed: int, gated: bool = false) -> void:
 	if xp_label:
-		xp_label.text = "%d / %d" % [current_xp, needed]
+		if gated and needed > 0:
+			xp_label.text = "蓄能 %d/%d" % [current_xp, needed]
+		else:
+			xp_label.text = "%d / %d" % [current_xp, needed]
 	
 	# 更新新版XP条
 	var root_top_bar = $Root/TopBar
@@ -246,8 +234,34 @@ func set_xp(current_xp: int, needed: int) -> void:
 		if row3:
 			var fill = row3.get_node_or_null("XpBarFill") as ProgressBar
 			if fill:
-				var ratio = float(current_xp) / maxf(float(needed), 1.0)
+				var ratio := float(current_xp) / maxf(float(needed), 1.0)
+				if gated:
+					ratio = minf(ratio, 0.96)
 				fill.value = ratio * 100.0
+
+
+func set_run_goal(text: String) -> void:
+	_ensure_goal_label()
+	if _goal_label == null:
+		return
+	_goal_label.text = text
+	_goal_label.visible = not text.is_empty()
+
+
+func _ensure_goal_label() -> void:
+	if _goal_label != null:
+		return
+	var vbox := get_node_or_null("Root/TopBar/VBox") as VBoxContainer
+	if vbox == null:
+		return
+	_goal_label = Label.new()
+	_goal_label.theme_type_variation = &"LabelMeta"
+	_goal_label.add_theme_font_size_override("font_size", 11)
+	_goal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_goal_label)
+	var row3_idx := vbox.get_node_or_null("Row3").get_index() if vbox.get_node_or_null("Row3") else vbox.get_child_count()
+	vbox.move_child(_goal_label, row3_idx)
+
 
 func set_endless(endless: bool) -> void:
 	if endless_badge:
@@ -288,8 +302,8 @@ func _refresh_relic_hud_line() -> void:
 				t = t + ("\n" + ch) if not t.is_empty() else ch
 		relic_label.text = t
 		if relic_row:
-			var show_archetype := _archetype_label != null and not _archetype_label.text.is_empty()
-			relic_row.visible = show_archetype or not t.is_empty()
+			# 专精/遗物不占顶栏；开局提示在 NotificationSystem，暂停可看构筑
+			relic_row.visible = false
 	elif relic_row:
 		_refresh_archetype_hud_line("")
 		relic_row.visible = false
@@ -301,6 +315,7 @@ func _ensure_archetype_label() -> void:
 	_archetype_label = Label.new()
 	_archetype_label.name = "ArchetypeLabelRuntime"
 	_archetype_label.theme_type_variation = &"LabelMeta"
+	_archetype_label.add_theme_font_size_override("font_size", 11)
 	_archetype_label.visible = false
 	relic_row.add_child(_archetype_label)
 	relic_row.move_child(_archetype_label, 0)
@@ -329,23 +344,22 @@ func _ready() -> void:
 	EventBus.player_damaged.connect(_on_player_damaged)
 	EventBus.vfx_profile_changed.connect(_show_vfx_profile_tip)
 	EventBus.extreme_perf_guard_changed.connect(_show_extreme_perf_guard_tip)
-	EventBus.skill_cast_start.connect(_on_skill_cast_start)
-	EventBus.skill_active.connect(_on_skill_active)
-	EventBus.skill_hit.connect(_on_skill_hit)
-	EventBus.skill_end.connect(_on_skill_end)
 	if joy_root:
 		joy_root.resized.connect(_sync_move_joystick_zone)
 	var vp := get_viewport()
 	if vp:
-		vp.size_changed.connect(_sync_move_joystick_zone)
+		if not vp.size_changed.is_connected(_sync_move_joystick_zone):
+			vp.size_changed.connect(_sync_move_joystick_zone)
+		if not vp.size_changed.is_connected(_layout_top_right_actions):
+			vp.size_changed.connect(_layout_top_right_actions)
 	call_deferred("_sync_move_joystick_zone")
 	call_deferred("_apply_safe_area_margins")
+	call_deferred("_apply_compact_hud_layout")
 	if fps_label:
 		fps_label.theme_type_variation = &"Label.Meta"
-		fps_label.visible = Settings.debug_hud
+		fps_label.visible = false
 	if perf_label:
-		perf_label.visible = Settings.debug_hud
-		perf_label.tooltip_text = GameDB.PERF_STRESS_HINT
+		perf_label.visible = false
 	# 装备面板按钮
 	if equip_btn:
 		equip_btn.pressed.connect(_toggle_equip_panel)
@@ -360,131 +374,38 @@ func _ready() -> void:
 	_setup_vfx_profile_tip()
 	_setup_damage_panel()
 	_setup_weapon_carrier_panel()
-	_setup_combat_event_debug_label()
 	_update_mobile_action_buttons()
+	call_deferred("_layout_top_right_actions")
 	var asm := get_node_or_null("/root/ActiveSkillManager")
 	if asm and asm.has_signal("cooldown_visual_changed") and not asm.cooldown_visual_changed.is_connected(_on_active_skill_hud):
 		asm.cooldown_visual_changed.connect(_on_active_skill_hud)
+	if active_skill_panel:
+		active_skill_panel.tooltip_text = "按住 R 或鼠标右键：发射穿透激光，松手后冷却 4 秒"
 	call_deferred("_refresh_relic_hud_line")
 
 
 func _on_active_skill_hud(remaining_sec: float, total_sec: float, aiming: bool) -> void:
+	var asm := get_node_or_null("/root/ActiveSkillManager")
+	var bound := asm != null and asm.has_method("is_bound") and bool(asm.call("is_bound"))
 	if active_skill_cd:
 		var t := maxf(0.001, total_sec)
 		var ready_ratio := 1.0 - clampf(remaining_sec / t, 0.0, 1.0)
 		active_skill_cd.value = ready_ratio * 100.0
 	if active_skill_hint:
-		if remaining_sec > 0.05:
-			active_skill_hint.text = "主动 %.1f秒" % remaining_sec
+		if not bound:
+			active_skill_hint.text = "技能未就绪"
+		elif remaining_sec > 0.05:
+			active_skill_hint.text = "冷却 %.1f秒" % remaining_sec
+		elif aiming:
+			active_skill_hint.text = "激光照射中"
 		else:
-			active_skill_hint.text = "主动 就绪" if not aiming else "主动 照射中…"
+			active_skill_hint.text = "按住 R / 右键"
 	if active_skill_panel:
 		active_skill_panel.visible = true
 		if aiming and active_skill_cd:
 			active_skill_cd.modulate = Color(0.75, 1.0, 1.0, 1.0)
 		elif active_skill_cd:
 			active_skill_cd.modulate = Color.WHITE
-
-func _setup_combat_event_debug_label() -> void:
-	var root := get_node_or_null("Root") as Control
-	if root == null:
-		return
-	_combat_evt_label = Label.new()
-	_combat_evt_label.name = "CombatEventDebug"
-	_combat_evt_label.text = ""
-	_combat_evt_label.theme_type_variation = &"Label.Meta"
-	_combat_evt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_combat_evt_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_combat_evt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_combat_evt_label.visible = false
-	_combat_evt_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_combat_evt_label.offset_left = -520.0
-	_combat_evt_label.offset_top = 272.0
-	_combat_evt_label.offset_right = -20.0
-	_combat_evt_label.offset_bottom = 338.0
-	root.add_child(_combat_evt_label)
-	_refresh_combat_event_debug_label()
-
-
-func _refresh_combat_event_debug_label() -> void:
-	if _combat_evt_label == null:
-		return
-	var filter_mode := "当前序列" if _combat_filter_current_cast else "全部序列"
-	var head := "战斗事件[%s]  技能:%s  序列:%d  命中:%d  最近:%s  时间:%d" % [
-		filter_mode,
-		_combat_last_skill_id,
-		_combat_last_cast_seq,
-		_combat_last_hit_count,
-		_combat_last_evt,
-		_combat_last_evt_ts
-	]
-	var body := ""
-	if not _combat_evt_history.is_empty():
-		body = "\n" + "\n".join(_combat_evt_history)
-	_combat_evt_label.text = head + body
-
-
-func _push_combat_evt_line(evt: String, skill_id: StringName, cast_seq: int, timestamp_ms: int, extra: String = "") -> void:
-	if _combat_filter_current_cast and cast_seq != _combat_focus_cast_seq:
-		return
-	var line := "[%d] %s  %s#%d" % [timestamp_ms % 100000, evt, String(skill_id), cast_seq]
-	if not extra.is_empty():
-		line += "  " + extra
-	_combat_evt_history.append(line)
-	if _combat_evt_history.size() > 10:
-		_combat_evt_history.pop_front()
-
-
-func _on_skill_cast_start(skill_id: StringName, _caster_id: int, cast_seq: int, timestamp_ms: int) -> void:
-	_combat_last_skill_id = String(skill_id)
-	_combat_last_cast_seq = cast_seq
-	_combat_focus_cast_seq = cast_seq
-	_combat_last_hit_count = 0
-	_combat_cast_hit_count = 0
-	_combat_cast_start_ts = timestamp_ms
-	_combat_last_evt = "cast_start"
-	_combat_last_evt_ts = timestamp_ms
-	# 新施法开始时，重置当前序列视图，避免保留上一轮噪声。
-	_combat_evt_history.clear()
-	_push_combat_evt_line("cast_start", skill_id, cast_seq, timestamp_ms)
-	_refresh_combat_event_debug_label()
-
-
-func _on_skill_active(skill_id: StringName, _caster_id: int, cast_seq: int, _frame_index: int, timestamp_ms: int) -> void:
-	_combat_last_skill_id = String(skill_id)
-	_combat_last_cast_seq = cast_seq
-	_combat_last_evt = "active"
-	_combat_last_evt_ts = timestamp_ms
-	_push_combat_evt_line("active", skill_id, cast_seq, timestamp_ms)
-	_refresh_combat_event_debug_label()
-
-
-func _on_skill_hit(skill_id: StringName, _caster_id: int, _target_id: int, cast_seq: int, _damage_type: StringName, _final_damage: float, _is_critical: bool, timestamp_ms: int) -> void:
-	_combat_last_skill_id = String(skill_id)
-	_combat_last_cast_seq = cast_seq
-	_combat_last_hit_count += 1
-	_combat_cast_hit_count += 1
-	_combat_last_evt = "hit"
-	_combat_last_evt_ts = timestamp_ms
-	_push_combat_evt_line("hit", skill_id, cast_seq, timestamp_ms, "x%d" % _combat_last_hit_count)
-	_refresh_combat_event_debug_label()
-
-
-func _on_skill_end(skill_id: StringName, _caster_id: int, cast_seq: int, _reason: StringName, timestamp_ms: int) -> void:
-	_combat_last_skill_id = String(skill_id)
-	_combat_last_cast_seq = cast_seq
-	_combat_last_evt = "end"
-	_combat_last_evt_ts = timestamp_ms
-	var duration_ms := maxi(0, timestamp_ms - _combat_cast_start_ts)
-	_push_combat_evt_line("end", skill_id, cast_seq, timestamp_ms)
-	_push_combat_evt_line("summary", skill_id, cast_seq, timestamp_ms, "hits=%d  dur=%dms" % [_combat_cast_hit_count, duration_ms])
-	_refresh_combat_event_debug_label()
-
-
-func _toggle_combat_evt_filter_mode() -> void:
-	_combat_filter_current_cast = not _combat_filter_current_cast
-	_combat_evt_history.clear()
-	_refresh_combat_event_debug_label()
 
 func _setup_vfx_profile_tip() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -498,11 +419,6 @@ func _setup_vfx_profile_tip() -> void:
 	_vfx_profile_tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_vfx_profile_tip.visible = false
 	_vfx_profile_tip.modulate = Color(1.0, 1.0, 1.0, 0.0)
-	_vfx_profile_tip.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_vfx_profile_tip.offset_left = -280.0
-	_vfx_profile_tip.offset_top = 56.0
-	_vfx_profile_tip.offset_right = -20.0
-	_vfx_profile_tip.offset_bottom = 82.0
 	root.add_child(_vfx_profile_tip)
 
 func _show_vfx_profile_tip(profile: int) -> void:
@@ -536,6 +452,46 @@ func _show_hud_tip(text: String) -> void:
 			_vfx_profile_tip.visible = false
 	)
 
+func _apply_compact_hud_layout() -> void:
+	var root := get_node_or_null("Root") as Control
+	var tb := get_node_or_null("Root/TopBar") as PanelContainer
+	if tb:
+		tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tb.modulate = Color(1.0, 1.0, 1.0, 0.72)
+		tb.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		tb.offset_left = 6.0
+		tb.offset_top = 6.0
+		tb.offset_right = 360.0
+		tb.offset_bottom = 34.0
+	var hp_row := get_node_or_null("Root/TopBar/VBox/HpBarRow") as Control
+	if hp_row:
+		hp_row.visible = false
+	if relic_row:
+		relic_row.visible = false
+	var row3 := get_node_or_null("Root/TopBar/VBox/Row3") as Control
+	if row3 and root and row3.get_parent() != root:
+		var vbox := row3.get_parent()
+		vbox.remove_child(row3)
+		root.add_child(row3)
+		row3.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		row3.offset_left = 10.0
+		row3.offset_right = -10.0
+		row3.offset_bottom = -8.0
+		row3.offset_top = -26.0
+		row3.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if fps_label:
+		fps_label.visible = Settings.debug_hud
+	if perf_label:
+		perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		perf_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		perf_label.offset_left = 8.0
+		perf_label.offset_top = -26.0
+		perf_label.offset_right = 480.0
+		perf_label.offset_bottom = -6.0
+		perf_label.add_theme_font_size_override("font_size", 11)
+		perf_label.visible = false
+
+
 func _apply_safe_area_margins() -> void:
 	var tb := get_node_or_null("Root/TopBar") as Control
 	if tb == null:
@@ -544,6 +500,7 @@ func _apply_safe_area_margins() -> void:
 	var top_inset := float(safe.position.y)
 	if top_inset > 0.5:
 		tb.offset_top = maxf(12.0, top_inset + 6.0)
+	_layout_top_right_actions()
 
 
 func _sync_move_joystick_zone() -> void:
@@ -579,15 +536,11 @@ func _update_mobile_action_buttons() -> void:
 		dash_btn.visible = touch_ui
 	if pause_btn:
 		pause_btn.visible = touch_ui
+	_layout_top_right_actions()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		var k := event as InputEventKey
-		if k.pressed and not k.echo and k.keycode == KEY_F8:
-			_toggle_combat_evt_filter_mode()
-			NotificationSystem.notify_message("战斗事件过滤: %s" % ("当前序列" if _combat_filter_current_cast else "全部序列"), 1.2, "info")
-			get_viewport().set_input_as_handled()
-			return
 		if k.pressed and not k.echo and k.keycode == KEY_F7:
 			_apply_skill_eff_experiment_preset()
 			get_viewport().set_input_as_handled()
@@ -711,22 +664,12 @@ func _setup_damage_panel() -> void:
 	_damage_toggle_btn.name = "DamageStatToggle"
 	_damage_toggle_btn.text = "伤害统计 ▼"
 	_damage_toggle_btn.theme_type_variation = &"ButtonSecondary"
-	_damage_toggle_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_damage_toggle_btn.offset_left = -180.0
-	_damage_toggle_btn.offset_top = 12.0
-	_damage_toggle_btn.offset_right = -20.0
-	_damage_toggle_btn.offset_bottom = 44.0
 	_damage_toggle_btn.pressed.connect(_toggle_damage_panel)
 	root.add_child(_damage_toggle_btn)
 
 	_damage_panel = PanelContainer.new()
 	_damage_panel.name = "DamageStatPanel"
 	_damage_panel.theme_type_variation = &"PanelCard"
-	_damage_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_damage_panel.offset_left = -360.0
-	_damage_panel.offset_top = 52.0
-	_damage_panel.offset_right = -20.0
-	_damage_panel.offset_bottom = 260.0
 	root.add_child(_damage_panel)
 
 	var vb := VBoxContainer.new()
@@ -843,6 +786,70 @@ func _setup_damage_panel() -> void:
 	_skill_eff_snapshot_status.theme_type_variation = &"Label.Meta"
 	vb.add_child(_skill_eff_snapshot_status)
 	_refresh_damage_panel(true)
+	_layout_top_right_actions()
+
+
+func _top_action_top_margin() -> float:
+	var safe := DisplayServer.get_display_safe_area()
+	return maxf(_TOP_ACTION_TOP, float(safe.position.y) + 4.0)
+
+
+func _top_action_button_width(btn: Button) -> float:
+	if btn == null:
+		return 108.0
+	if btn == _damage_toggle_btn:
+		return 132.0
+	if btn == equip_btn:
+		return 116.0
+	return 108.0
+
+
+func _layout_top_right_actions() -> void:
+	var top := _top_action_top_margin()
+	var bottom := top + _TOP_ACTION_HEIGHT
+	var cursor := -_TOP_ACTION_RIGHT_MARGIN
+	# 从右到左：装备 → 伤害统计 → 冲刺 → 暂停
+	var ordered: Array[Button] = []
+	if equip_btn:
+		ordered.append(equip_btn)
+	if _damage_toggle_btn:
+		ordered.append(_damage_toggle_btn)
+	if dash_btn and dash_btn.visible:
+		ordered.append(dash_btn)
+	if pause_btn and pause_btn.visible:
+		ordered.append(pause_btn)
+	for btn in ordered:
+		if btn == null:
+			continue
+		var width := _top_action_button_width(btn)
+		btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		btn.offset_top = top
+		btn.offset_bottom = bottom
+		btn.offset_right = cursor
+		btn.offset_left = cursor - width
+		cursor = btn.offset_left - _TOP_ACTION_GAP
+	_layout_damage_panel_anchor(top, bottom)
+	_layout_vfx_profile_tip(top, bottom)
+
+
+func _layout_damage_panel_anchor(top: float, bottom: float) -> void:
+	if _damage_panel == null:
+		return
+	_damage_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_damage_panel.offset_top = bottom + 4.0
+	_damage_panel.offset_right = -_TOP_ACTION_RIGHT_MARGIN
+	_damage_panel.offset_left = -360.0
+	_damage_panel.offset_bottom = _damage_panel.offset_top + 208.0
+
+
+func _layout_vfx_profile_tip(top: float, bottom: float) -> void:
+	if _vfx_profile_tip == null:
+		return
+	_vfx_profile_tip.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_vfx_profile_tip.offset_top = bottom + 6.0
+	_vfx_profile_tip.offset_bottom = _vfx_profile_tip.offset_top + 26.0
+	_vfx_profile_tip.offset_right = -_TOP_ACTION_RIGHT_MARGIN
+	_vfx_profile_tip.offset_left = -300.0
 
 
 func _toggle_damage_panel() -> void:
@@ -854,6 +861,7 @@ func _toggle_damage_panel() -> void:
 	if _damage_panel_expanded:
 		_refresh_damage_panel(true)
 		_damage_trend_samples.clear()
+	_layout_top_right_actions()
 
 
 func _toggle_damage_mode() -> void:
@@ -1524,9 +1532,18 @@ func _setup_weapon_carrier_panel() -> void:
 	_weapon_carrier_panel.visible = false
 	root.add_child(_weapon_carrier_panel)
 
+	var outer_margin := MarginContainer.new()
+	outer_margin.name = "CarrierOuterMargin"
+	outer_margin.add_theme_constant_override("margin_left", 14)
+	outer_margin.add_theme_constant_override("margin_top", 12)
+	outer_margin.add_theme_constant_override("margin_right", 14)
+	outer_margin.add_theme_constant_override("margin_bottom", 12)
+	_weapon_carrier_panel.add_child(outer_margin)
+
 	var shell := VBoxContainer.new()
 	shell.name = "CarrierShell"
-	_weapon_carrier_panel.add_child(shell)
+	shell.add_theme_constant_override("separation", 10)
+	outer_margin.add_child(shell)
 
 	var title := Label.new()
 	title.text = "武器载体图鉴（发射方式 / 命中特效）"
@@ -1536,18 +1553,28 @@ func _setup_weapon_carrier_panel() -> void:
 	var tip := Label.new()
 	tip.text = "点击装备按钮可开关；卡面展示载体形象与战斗语义。"
 	tip.theme_type_variation = &"Label.Meta"
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	shell.add_child(tip)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(640, 404)
+	scroll.custom_minimum_size = Vector2(620, 404)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	shell.add_child(scroll)
+
+	var grid_wrap := MarginContainer.new()
+	grid_wrap.add_theme_constant_override("margin_left", 2)
+	grid_wrap.add_theme_constant_override("margin_top", 4)
+	grid_wrap.add_theme_constant_override("margin_right", 2)
+	grid_wrap.add_theme_constant_override("margin_bottom", 6)
+	scroll.add_child(grid_wrap)
 
 	_weapon_carrier_grid = GridContainer.new()
 	_weapon_carrier_grid.columns = 2
-	_weapon_carrier_grid.add_theme_constant_override("h_separation", 8)
-	_weapon_carrier_grid.add_theme_constant_override("v_separation", 8)
-	scroll.add_child(_weapon_carrier_grid)
+	_weapon_carrier_grid.add_theme_constant_override("h_separation", 10)
+	_weapon_carrier_grid.add_theme_constant_override("v_separation", 10)
+	grid_wrap.add_child(_weapon_carrier_grid)
 
 
 func _load_weapon_carrier_defs() -> void:
@@ -1587,7 +1614,8 @@ func _refresh_weapon_carrier_panel() -> void:
 func _build_weapon_card(weapon_id: String, card_def: Dictionary, lv: int) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.theme_type_variation = &"PanelCard"
-	card.custom_minimum_size = Vector2(308, 186)
+	card.custom_minimum_size = Vector2(296, 212)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	card.set_meta("hovered", false)
 	if lv > 0:
@@ -1601,49 +1629,107 @@ func _build_weapon_card(weapon_id: String, card_def: Dictionary, lv: int) -> Pan
 		card.set_meta("hovered", false)
 	)
 
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	card.add_child(margin)
+
 	var vb := VBoxContainer.new()
-	card.add_child(vb)
+	vb.add_theme_constant_override("separation", 6)
+	margin.add_child(vb)
 
 	var theme_bar := ColorRect.new()
-	theme_bar.custom_minimum_size = Vector2(286, 4)
+	theme_bar.custom_minimum_size = Vector2(0, 4)
+	theme_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	theme_bar.color = _carrier_theme_color(String(card_def.get("theme", "neutral")))
 	vb.add_child(theme_bar)
 
-	var head := Label.new()
 	var wname := String(card_def.get("name", GameDB.WEAPONS.get(weapon_id, {}).get("name", weapon_id)))
 	var carrier := String(card_def.get("carrier_name", "载体"))
-	var lv_text := ("Lv.%d" % lv) if lv > 0 else "未装备"
 	var ex_ready := _is_weapon_ex_ready(weapon_id, lv)
-	var ex_text := "  ◇EX就绪" if ex_ready else ""
-	head.text = "%s  [%s%s]\n%s" % [wname, lv_text, ex_text, carrier]
-	head.theme_type_variation = &"Label.Body"
-	vb.add_child(head)
+
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	vb.add_child(title_row)
+
+	var name_lbl := Label.new()
+	name_lbl.text = wname
+	name_lbl.theme_type_variation = &"Label.Value"
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title_row.add_child(name_lbl)
+
+	var status_lbl := Label.new()
+	var lv_text := ("Lv.%d" % lv) if lv > 0 else "未装备"
+	status_lbl.text = lv_text + ("  ◇EX" if ex_ready else "")
+	status_lbl.theme_type_variation = &"Label.Meta"
+	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	title_row.add_child(status_lbl)
+
+	var carrier_lbl := Label.new()
+	carrier_lbl.text = carrier
+	carrier_lbl.theme_type_variation = &"Label.Body"
+	carrier_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(carrier_lbl)
 	card.tooltip_text = _weapon_card_tooltip(weapon_id, card_def)
+
+	var preview := PanelContainer.new()
+	preview.theme_type_variation = &"PanelCard"
+	preview.custom_minimum_size = Vector2(0, 92)
+	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.add_child(preview)
+
+	var preview_pad := MarginContainer.new()
+	preview_pad.add_theme_constant_override("margin_left", 6)
+	preview_pad.add_theme_constant_override("margin_top", 6)
+	preview_pad.add_theme_constant_override("margin_right", 6)
+	preview_pad.add_theme_constant_override("margin_bottom", 6)
+	preview.add_child(preview_pad)
 
 	var tex_path := String(card_def.get("texture", ""))
 	if not tex_path.is_empty() and ResourceLoader.exists(tex_path):
 		var tr := TextureRect.new()
-		tr.custom_minimum_size = Vector2(286, 86)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tr.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		tr.custom_minimum_size = Vector2(0, 76)
 		tr.texture = load(tex_path) as Texture2D
-		vb.add_child(tr)
+		preview_pad.add_child(tr)
+	else:
+		var placeholder := Label.new()
+		placeholder.text = "暂无预览图"
+		placeholder.theme_type_variation = &"Label.Meta"
+		placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		placeholder.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		placeholder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		placeholder.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		preview_pad.add_child(placeholder)
+
+	var meta_box := VBoxContainer.new()
+	meta_box.add_theme_constant_override("separation", 2)
+	vb.add_child(meta_box)
 
 	var fire := Label.new()
-	fire.text = "发射: %s" % String(card_def.get("fire_mode", "-"))
+	fire.text = "发射 · %s" % String(card_def.get("fire_mode", "-"))
 	fire.theme_type_variation = &"Label.Meta"
-	vb.add_child(fire)
+	fire.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	meta_box.add_child(fire)
 
 	var hit := Label.new()
-	hit.text = "命中: %s" % String(card_def.get("hit_fx", "-"))
+	hit.text = "命中 · %s" % String(card_def.get("hit_fx", "-"))
 	hit.theme_type_variation = &"Label.Meta"
-	vb.add_child(hit)
+	hit.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	meta_box.add_child(hit)
 
 	if lv > 0:
 		var eq := Label.new()
 		eq.text = "已装备"
 		eq.theme_type_variation = &"Label.Value"
 		eq.modulate = Color(0.62, 1.0, 0.84, 1.0)
-		vb.add_child(eq)
+		meta_box.add_child(eq)
 
 	_weapon_card_items.append({
 		"card": card,

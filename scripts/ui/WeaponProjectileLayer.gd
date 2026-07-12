@@ -30,6 +30,8 @@ var _runtime_overload_mul := 1.0
 func set_runtime_overload_mul(v: float) -> void:
 	_runtime_overload_mul = clampf(v, 0.55, 1.0)
 
+const _PROJECTILE_VISUAL_MUL := 1.0
+
 func spawn_projectile(kind: String, from_pos: Vector2, dir: Vector2, speed: float, lifetime: float, weapon_lv: int = 1, evolved: bool = false) -> void:
 	if _projectiles.size() >= _max_projectiles_for_profile():
 		_recycle_oldest_projectile()
@@ -48,7 +50,7 @@ func spawn_projectile(kind: String, from_pos: Vector2, dir: Vector2, speed: floa
 	scale_mul *= 1.0 + clampf(float(weapon_lv - 1) * 0.03, 0.0, 0.28)
 	if evolved:
 		scale_mul *= 1.06
-	sprite.scale = Vector2.ONE * scale_mul
+	sprite.scale = Vector2.ONE * scale_mul * _PROJECTILE_VISUAL_MUL
 	_projectiles.append({
 		"kind": kind,
 		"pos": from_pos,
@@ -206,26 +208,55 @@ func _update_weapon_unlock_fx(delta: float) -> void:
 func _base_scale_for_kind(kind: String) -> float:
 	match kind:
 		_KIND_KUNAI:
-			return 0.92
-		_KIND_ROCKET:
 			return 1.12
+		_KIND_ROCKET:
+			return 1.32
 		_KIND_LIGHTNING:
-			return 1.04
+			return 1.24
+		_KIND_QUANTUM:
+			return 1.20
+		_KIND_GUARDIAN:
+			return 1.28
+		_KIND_DRONE:
+			return 1.18
+		_KIND_BOOMERANG:
+			return 1.22
+		_KIND_MOLOTOV:
+			return 1.18
+		_KIND_FROST, _KIND_HEAL:
+			return 1.30
+		_KIND_MINE:
+			return 1.14
 		_:
-			return 1.0
+			return 1.16
 
 func _modulate_for_kind(kind: String) -> Color:
+	# Kenney 原图已分色：只做轻微提亮/偏色，避免 12 种染成同色
 	match kind:
 		_KIND_KUNAI:
-			return Color(0.84, 0.92, 1.0, 0.96)
+			return Color(1.12, 1.18, 1.25, 1.0)
 		_KIND_ROCKET:
-			return Color(1.0, 0.78, 0.58, 0.98)
-		_KIND_LIGHTNING:
-			return Color(0.62, 0.98, 1.0, 0.96)
-		_KIND_ACTIVE_BOLT:
-			return Color(0.45, 0.95, 1.0, 0.98)
+			return Color(1.22, 1.08, 0.92, 1.0)
+		_KIND_LIGHTNING, _KIND_ACTIVE_BOLT:
+			return Color(0.95, 1.22, 1.28, 1.0)
+		_KIND_QUANTUM:
+			return Color(1.15, 0.95, 1.22, 1.0)
+		_KIND_MOLOTOV:
+			return Color(1.25, 1.05, 0.88, 1.0)
+		_KIND_GUARDIAN:
+			return Color(1.2, 1.12, 0.88, 1.0)
+		_KIND_DRONE:
+			return Color(0.92, 1.15, 1.25, 1.0)
+		_KIND_BOOMERANG:
+			return Color(1.22, 1.12, 0.82, 1.0)
+		_KIND_FROST:
+			return Color(0.88, 1.18, 1.28, 0.98)
+		_KIND_HEAL:
+			return Color(0.88, 1.25, 1.02, 0.98)
+		_KIND_MINE:
+			return Color(1.15, 0.95, 1.22, 1.0)
 		_:
-			return Color(1.0, 1.0, 1.0, 1.0)
+			return Color(1.12, 1.12, 1.12, 1.0)
 
 func _rotation_offset_for_kind(kind: String, phase: float) -> float:
 	match kind:
@@ -269,8 +300,8 @@ func sync_guardian_blades(center: Vector2, radius: float, count: int, evolved: b
 		blade.global_position = pos
 		blade.rotation = ang + PI * 0.5
 		blade.visible = true
-		blade.scale = Vector2.ONE * (1.0 if not evolved else 1.08)
-		blade.modulate = Color(1.0, 0.9, 0.64, 0.9)
+		blade.scale = Vector2.ONE * (1.0 if not evolved else 1.08) * _PROJECTILE_VISUAL_MUL
+		blade.modulate = _modulate_for_kind(_KIND_GUARDIAN)
 
 func sync_aura(kind: String, center: Vector2, radius: float, visible: bool, evolved: bool) -> void:
 	if not _aura_sprites.has(kind):
@@ -289,12 +320,14 @@ func sync_aura(kind: String, center: Vector2, radius: float, visible: bool, evol
 	var base_scale := clampf(radius / 36.0, 0.8, 6.2)
 	if evolved:
 		base_scale *= 1.08
-	aura.scale = Vector2.ONE * base_scale
+	aura.scale = Vector2.ONE * base_scale * (_PROJECTILE_VISUAL_MUL * 0.72)
 	match kind:
 		_KIND_FROST:
-			aura.modulate = Color(0.68, 0.9, 1.0, 0.48)
+			aura.modulate = _modulate_for_kind(_KIND_FROST)
+			aura.modulate.a = 0.52
 		_KIND_HEAL:
-			aura.modulate = Color(0.5, 1.0, 0.74, 0.45)
+			aura.modulate = _modulate_for_kind(_KIND_HEAL)
+			aura.modulate.a = 0.48
 		_:
 			aura.modulate = Color(1.0, 1.0, 1.0, 0.5)
 
@@ -312,8 +345,8 @@ func sync_mines(positions: Array[Vector2], evolved: bool) -> void:
 		m.visible = true
 		m.global_position = positions[i]
 		m.rotation = 0.0
-		m.scale = Vector2.ONE * (1.0 if not evolved else 1.14)
-		m.modulate = Color(0.76, 0.9, 1.0, 0.95 if not evolved else 1.0)
+		m.scale = Vector2.ONE * (1.0 if not evolved else 1.14) * _PROJECTILE_VISUAL_MUL
+		m.modulate = _modulate_for_kind(_KIND_MINE)
 
 func clear_runtime_entities() -> void:
 	sync_guardian_blades(Vector2.ZERO, 0.0, 0, false)
@@ -397,6 +430,12 @@ func _anim_speed_for_kind(kind: String) -> float:
 		_:
 			return 8.0
 
+func _new_sprite_frames() -> SpriteFrames:
+	var frames := SpriteFrames.new()
+	if not frames.has_animation("default"):
+		frames.add_animation("default")
+	return frames
+
 func _frames_for_kind(kind: String) -> SpriteFrames:
 	if _frames_cache.has(kind):
 		return _frames_cache[kind]
@@ -404,8 +443,7 @@ func _frames_for_kind(kind: String) -> SpriteFrames:
 	if external != null:
 		_frames_cache[kind] = external
 		return external
-	var frames := SpriteFrames.new()
-	frames.add_animation("default")
+	var frames := _new_sprite_frames()
 	if _is_animated_kind(kind):
 		for i in range(4):
 			frames.add_frame("default", _texture_for_kind_frame(kind, i))
@@ -435,13 +473,11 @@ func _load_projectile_frames_from_kind(kind: String) -> SpriteFrames:
 	if not ResourceLoader.exists(p0) and ResourceLoader.exists(pdef):
 		var td := load(pdef) as Texture2D
 		if td != null:
-			var sf1 := SpriteFrames.new()
-			sf1.add_animation("default")
+			var sf1 := _new_sprite_frames()
 			sf1.add_frame("default", td)
 			sf1.set_animation_loop("default", true)
 			return sf1
-	var sf := SpriteFrames.new()
-	sf.add_animation("default")
+	var sf := _new_sprite_frames()
 	var loaded := 0
 	for i in range(16):
 		var p := "%s/frame_%d.png" % [base, i]
@@ -672,6 +708,14 @@ func _update_aura_breathing() -> void:
 			base_a = 0.46
 		s.modulate.a = clampf(base_a + sin(Time.get_ticks_msec() * 0.006) * 0.08, 0.24, 0.72)
 
+func clear_weapon_mounts() -> void:
+	for k in _weapon_mount_sprites.keys():
+		var old := _weapon_mount_sprites[k] as AnimatedSprite2D
+		if old:
+			_free_sprite(old)
+	_weapon_mount_sprites.clear()
+
+
 func sync_weapon_mounts(center: Vector2, active_weapons: Array[String], aim_dir: Vector2) -> void:
 	# 隐藏已经失活的挂件
 	for k in _weapon_mount_sprites.keys():
@@ -732,7 +776,7 @@ func sync_weapon_mounts(center: Vector2, active_weapons: Array[String], aim_dir:
 		var pos := center + Vector2(cos(ang), sin(ang)) * k_rad
 		mount.global_position = pos
 		mount.rotation = ang + rot_bias
-		mount.scale = Vector2.ONE * k_scale
+		mount.scale = Vector2.ONE * k_scale * _PROJECTILE_VISUAL_MUL
 		mount.modulate = _modulate_for_kind(kind)
 		mount.modulate.a = alpha
 

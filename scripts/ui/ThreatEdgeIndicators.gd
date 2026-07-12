@@ -24,6 +24,17 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_process(true)
 
+func set_relief_ratio(r: float) -> void:
+	_relief_ratio = clampf(r, 0.0, 1.0)
+
+func _resolve_game() -> Node:
+	var n: Node = get_parent()
+	while n != null:
+		if n.get_node_or_null("EnemyManager") != null and n.get_node_or_null("Player") != null:
+			return n
+		n = n.get_parent()
+	return null
+
 func _process(_delta: float) -> void:
 	if not visible:
 		return
@@ -31,10 +42,9 @@ func _process(_delta: float) -> void:
 		_targets.clear()
 		queue_redraw()
 		return
-	var game := get_parent().get_parent()
+	var game := _resolve_game()
 	if game == null:
 		return
-	_relief_ratio = float(game.pressure_relief_ratio()) if game.has_method("pressure_relief_ratio") else 0.0
 	var em := game.get_node_or_null("EnemyManager")
 	var pl := game.get_node_or_null("Player")
 	var cam := get_viewport().get_camera_2d()
@@ -55,9 +65,12 @@ func _filter_targets_for_ui(raw_targets: Array[Dictionary]) -> Array[Dictionary]
 	var others: Array[Dictionary] = []
 	for t in raw_targets:
 		var k := int(t.get("kind", -1))
+		if bool(t.get("imminent", false)):
+			elites.insert(0, t)
+			continue
 		if k == 9:
 			bosses.append(t)
-		elif k == 6 or k == 7:
+		elif k == 6 or k == 7 or k == 3:
 			elites.append(t)
 		else:
 			others.append(t)

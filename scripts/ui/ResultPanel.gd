@@ -70,6 +70,9 @@ func show_result(data: Dictionary, is_win: bool) -> void:
 	diagnosis_line.text = data.get("diagnosis", "诊断: 构筑均衡")
 	var recap: String = String(data.get("recap_line", ""))
 	var flow_line: String = String(data.get("flow_line", ""))
+	var suggest_line: String = String(data.get("suggest_line", ""))
+	var plan_line: String = String(data.get("plan_line", ""))
+	var next_run_hint: String = String(data.get("next_run_hint", ""))
 	var unlock_line: String = String(data.get("unlock_line", ""))
 	var scrap_delta: int = int(data.get("scrap_delta", 0))
 	var scrap_total: int = int(data.get("scrap_total", 0))
@@ -86,6 +89,12 @@ func show_result(data: Dictionary, is_win: bool) -> void:
 			chunks.append("复盘 · " + recap)
 		if not flow_line.is_empty():
 			chunks.append(flow_line)
+		if not suggest_line.is_empty():
+			chunks.append(suggest_line)
+		if not plan_line.is_empty() and plan_line != "下一步计划: -":
+			chunks.append(plan_line)
+		if not next_run_hint.is_empty():
+			chunks.append(next_run_hint)
 		if chunks.is_empty():
 			recap_line.visible = false
 		else:

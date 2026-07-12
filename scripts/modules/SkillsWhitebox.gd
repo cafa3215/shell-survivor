@@ -76,19 +76,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		match k.keycode:
 			KEY_1:
 				_start_stage(1)
-				accept_event()
+				get_viewport().set_input_as_handled()
 			KEY_2:
 				_start_stage(2)
-				accept_event()
+				get_viewport().set_input_as_handled()
 			KEY_3:
 				_start_stage(3)
-				accept_event()
+				get_viewport().set_input_as_handled()
 			KEY_R:
 				_reset_battle()
-				accept_event()
+				get_viewport().set_input_as_handled()
 			KEY_ESCAPE:
 				_back_to_menu()
-				accept_event()
+				get_viewport().set_input_as_handled()
 
 func _exit_tree() -> void:
 	# 兜底：如果不是正常 completed/timeout 流程离开，仍补一条 session_end 便于审计

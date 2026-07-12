@@ -18,10 +18,11 @@ anchor_bottom = 1.0
 theme_type_variation = &"PanelScreen"
 
 [node name="TopBar" type="PanelContainer" parent="Root"]
-offset_left = 12.0
-offset_top = 12.0
-offset_right = 540.0
-offset_bottom = 118.0
+offset_left = 6.0
+offset_top = 6.0
+offset_right = 360.0
+offset_bottom = 34.0
+mouse_filter = 2
 theme_type_variation = &"PanelScreen"
 
 [node name="VBox" type="VBoxContainer" parent="Root/TopBar"]
@@ -75,6 +76,7 @@ theme_type_variation = &"LabelMeta"
 vertical_alignment = 1
 
 [node name="HpBarRow" type="HBoxContainer" parent="Root/TopBar/VBox"]
+visible = false
 theme_type_variation = &"PanelCard"
 
 [node name="HpBarBg" type="ProgressBar" parent="Root/TopBar/VBox/HpBarRow"]
@@ -120,7 +122,7 @@ theme_override_font_sizes/font_size = 12
 theme_type_variation = &"PanelCard"
 
 [node name="XpBarBg" type="ProgressBar" parent="Root/TopBar/VBox/Row3"]
-custom_minimum_size = Vector2(220, 12)
+custom_minimum_size = Vector2(180, 8)
 min_value = 0.0
 max_value = 100.0
 value = 100.0
@@ -128,7 +130,7 @@ show_percentage = false
 theme_type_variation = &"BarXp"
 
 [node name="XpBarFill" type="ProgressBar" parent="Root/TopBar/VBox/Row3"]
-custom_minimum_size = Vector2(218, 10)
+custom_minimum_size = Vector2(178, 6)
 position = Vector2(1, 1)
 min_value = 0.0
 max_value = 100.0
@@ -178,6 +180,11 @@ theme_type_variation = &"LabelValue"
 
 [node name="PerfLabel" type="Label" parent="Root"]
 visible = false
+offset_left = 8.0
+offset_top = 78.0
+offset_right = 520.0
+offset_bottom = 98.0
+mouse_filter = 2
 theme_type_variation = &"LabelMeta"
 
 [node name="BossContainer" type="PanelContainer" parent="Root"]
@@ -391,7 +398,7 @@ layout_mode = 2
 
 [node name="HintLabel" type="Label" parent="Root/ActiveSkillPanel/VBox"]
 layout_mode = 2
-text = "主动 右键/R"
+text = "按住 R / 右键"
 horizontal_alignment = 2
 theme_type_variation = &"LabelMeta"
 

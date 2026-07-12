@@ -133,19 +133,19 @@ func _process(delta: float) -> void:
 		
 		# 更新MultiMesh渲染
 		# 缓慢呼吸 + 轻微旋转：易读、减少频闪
-		var pulse := 0.86 + 0.14 * sin(Time.get_ticks_msec() * 0.0032 + float(idx) * 0.71)
-		var scale := 1.0 + float(mini(orb_val[idx], 10)) * 0.07
+		var pulse := 0.78 + 0.22 * sin(Time.get_ticks_msec() * 0.0038 + float(idx) * 0.71)
+		var scale := 1.08 + float(mini(orb_val[idx], 10)) * 0.09
 		var rot := sin(Time.get_ticks_msec() * 0.0024 + float(idx) * 1.1) * 0.12
 		var transform := Transform2D(rot, Vector2(scale, scale), 0.0, orb_pos[idx])
 		_mm.set_instance_transform_2d(idx, transform)
 		
 		var color: Color
 		if orb_val[idx] >= 4:
-			color = Color(1.0, 0.82, 0.28, pulse)  # 大金豆
+			color = Color(1.0, 0.88, 0.35, pulse)  # 大金豆
 		elif orb_val[idx] >= 2:
-			color = Color(0.45, 0.42, 1.0, pulse)  # 紫豆（高价值）
+			color = Color(0.62, 0.52, 1.0, pulse)  # 紫豆（高价值）
 		else:
-			color = Color(0.28, 0.82, 1.0, pulse)  # 青蓝豆（弹壳式经验）
+			color = Color(0.35, 0.95, 1.0, pulse)  # 青蓝豆（弹壳式经验）
 		_mm.set_instance_color(idx, color)
 
 func spawn_orb(pos: Vector2, v: int) -> void:

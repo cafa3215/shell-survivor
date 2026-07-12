@@ -12,7 +12,7 @@ var _sfx_library: Dictionary = {}
 var _sfx_variants: Dictionary = {}  # name -> Array[AudioStream]
 var _music_library: Dictionary = {}
 var _sfx_cooldowns: Dictionary = {}  # name -> remaining cooldown
-var _sfx_cooldown_time: float = 0.05  # 同一音效最短间隔（秒）
+var _sfx_cooldown_time: float = 0.08  # 同一音效最短间隔（秒）
 ## 暂停/结算时压低背景音乐，恢复后由 Settings 总线音量还原
 var _pause_music_ducked: bool = false
 const _PAUSE_MUSIC_LINEAR_MUL := 0.38
@@ -47,7 +47,7 @@ const _MUSIC_FILENAMES := {
 # - cooldown: 该来源最小触发间隔
 # - layer: 次层（可选），按概率叠加，增强层次与刺激感
 const _WEAPON_SFX_PROFILE := {
-	"kunai_hit": {"base": "weapon_fire", "pitch_min": 1.04, "pitch_max": 1.2, "vol_db": -5.0, "cooldown": 0.015, "layer": {"name": "hit", "chance": 0.42, "pitch_min": 1.1, "pitch_max": 1.24, "vol_db": -14.4}},
+	"kunai_hit": {"base": "weapon_fire", "pitch_min": 0.94, "pitch_max": 1.06, "vol_db": -7.2, "cooldown": 0.028, "layer": {"name": "hit", "chance": 0.18, "pitch_min": 0.88, "pitch_max": 0.98, "vol_db": -18.0}},
 	"kunai_pierce": {"base": "weapon_fire", "pitch_min": 1.02, "pitch_max": 1.16, "vol_db": -5.8, "cooldown": 0.018, "layer": {"name": "hit", "chance": 0.3, "pitch_min": 1.04, "pitch_max": 1.16, "vol_db": -15.6}},
 	"kunai_finish": {"base": "hit", "pitch_min": 0.96, "pitch_max": 1.1, "vol_db": -3.8, "cooldown": 0.024, "layer": {"name": "weapon_fire", "chance": 0.44, "pitch_min": 0.92, "pitch_max": 1.06, "vol_db": -13.8}},
 	"lightning_strike": {"base": "lightning", "pitch_min": 0.84, "pitch_max": 1.14, "vol_db": -2.6, "cooldown": 0.024, "layer": {"name": "hit", "chance": 0.64, "pitch_min": 0.88, "pitch_max": 1.12, "vol_db": -11.4}},
@@ -316,12 +316,17 @@ func _play_weapon_profile(sn: String) -> bool:
 	if last_name == layer_name and randf() < 0.45:
 		return true
 	_last_variant_by_key[last_key] = layer_name
+	var layer_vol: float = float(layer.get("vol_db", -12.0))
+	var layer_cd: float = 0.0
+	if layer_name == "hit":
+		layer_vol -= 2.5
+		layer_cd = 0.09
 	play_sfx_named(
 		layer_name,
 		randf_range(float(layer.get("pitch_min", 0.95)), float(layer.get("pitch_max", 1.05))),
-		float(layer.get("vol_db", -12.0)),
-		0.0,
-		""
+		layer_vol,
+		layer_cd,
+		"layer:" + layer_name if layer_name == "hit" else ""
 	)
 	return true
 
@@ -383,8 +388,10 @@ func _on_play_sfx(name: StringName, _pos: Vector2) -> void:
 	var relief: float = _current_pressure_relief_ratio()
 	var pressure: float = _enemy_pressure_ratio()
 	match sn:
-		"weapon_fire", "hit":
-			pitch = randf_range(0.93, 1.07)
+		"weapon_fire":
+			pitch = randf_range(0.90, 1.02)
+		"hit":
+			pitch = randf_range(0.82, 0.96)
 		"enemy_death":
 			pitch = randf_range(0.9, 1.11)
 		"explosion":
@@ -407,6 +414,13 @@ func _on_play_sfx(name: StringName, _pos: Vector2) -> void:
 				pass
 	var vol_db: float = 0.0
 	var cd: float = -1.0
+	match sn:
+		"hit":
+			vol_db = -5.5
+			cd = 0.11
+		"weapon_fire":
+			vol_db = -1.5
+			cd = 0.06
 	if pressure > 0.001:
 		match sn:
 			"enemy_death":

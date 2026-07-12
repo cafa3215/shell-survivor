@@ -7,123 +7,107 @@
 visible = false
 layout_mode = 3
 anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 mouse_filter = 0
 theme = ExtResource("2")
 script = ExtResource("1")
 theme_type_variation = &"PanelPopup"
 
 [node name="DimBg" type="Panel" parent="."]
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 theme_type_variation = &"PanelPopup"
 
-[node name="Background" type="Panel" parent="."]
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -420.0
-offset_top = -180.0
-offset_right = 420.0
-offset_bottom = 180.0
+offset_left = -456.0
+offset_top = -196.0
+offset_right = 456.0
+offset_bottom = 196.0
 theme_type_variation = &"PanelCard"
+clip_contents = true
 
-[node name="TitleContainer" type="HBoxContainer" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -360.0
-offset_top = -155.0
-offset_right = 360.0
-offset_bottom = -115.0
+[node name="Margin" type="MarginContainer" parent="Background"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
 
-[node name="TitleIcon" type="Label" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -370.0
-offset_top = -148.0
-offset_right = -320.0
-offset_bottom = -122.0
+[node name="VBox" type="VBoxContainer" parent="Background/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleRow" type="HBoxContainer" parent="Background/Margin/VBox"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="TitleIcon" type="Label" parent="Background/Margin/VBox/TitleRow"]
+layout_mode = 2
 text = "⚡"
- theme_type_variation = &"LabelMeta"
+theme_type_variation = &"LabelMeta"
 
-[node name="Title" type="Label" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -155.0
-offset_right = 300.0
-offset_bottom = -115.0
+[node name="Title" type="Label" parent="Background/Margin/VBox/TitleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "变异 · 三选一"
- theme_type_variation = &"LabelTitle"
+theme_type_variation = &"LabelTitle"
 horizontal_alignment = 1
 
-[node name="HintLabel" type="Label" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -250.0
-offset_top = -118.0
-offset_right = 250.0
-offset_bottom = -90.0
+[node name="HintLabel" type="Label" parent="Background/Margin/VBox"]
+layout_mode = 2
 text = "武器模组 / 被动 / 融合 — 择一强化（细胞式构筑）"
- theme_type_variation = &"LabelBody"
+theme_type_variation = &"LabelBody"
 horizontal_alignment = 1
+autowrap_mode = 2
 
-[node name="CardRow" type="HBoxContainer" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -380.0
-offset_top = -80.0
-offset_right = 380.0
-offset_bottom = 70.0
+[node name="CardRow" type="HBoxContainer" parent="Background/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+alignment = 1
 
-[node name="Card1" type="Button" parent="CardRow"]
-custom_minimum_size = Vector2(220, 145)
+[node name="Card1" type="Button" parent="Background/Margin/VBox/CardRow"]
+custom_minimum_size = Vector2(0, 148)
+layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
 size_flags_vertical = 3
 mouse_filter = 0
- theme_type_variation = &"CardNormal"
+theme_type_variation = &"CardNormal"
+autowrap_mode = 2
 
-[node name="Card2" type="Button" parent="CardRow"]
-custom_minimum_size = Vector2(220, 145)
+[node name="Card2" type="Button" parent="Background/Margin/VBox/CardRow"]
+custom_minimum_size = Vector2(0, 148)
+layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
 size_flags_vertical = 3
 mouse_filter = 0
- theme_type_variation = &"CardNormal"
+theme_type_variation = &"CardNormal"
+autowrap_mode = 2
 
-[node name="Card3" type="Button" parent="CardRow"]
-custom_minimum_size = Vector2(220, 145)
+[node name="Card3" type="Button" parent="Background/Margin/VBox/CardRow"]
+custom_minimum_size = Vector2(0, 148)
+layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
 size_flags_vertical = 3
 mouse_filter = 0
- theme_type_variation = &"CardNormal"
+theme_type_variation = &"CardNormal"
+autowrap_mode = 2
 
-[node name="BottomHint" type="Label" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -200.0
-offset_top = 95.0
-offset_right = 200.0
-offset_bottom = 115.0
+[node name="BottomHint" type="Label" parent="Background/Margin/VBox"]
+layout_mode = 2
 text = "按 1/2/3 或点击选择"
- theme_type_variation = &"LabelMeta"
+theme_type_variation = &"LabelMeta"
 horizontal_alignment = 1
