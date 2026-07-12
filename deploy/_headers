@@ -1,0 +1,10 @@
+# Cloudflare Pages / Netlify 头信息（若用静态托管 + 自定义域名）
+/*
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/*.wasm
+  Content-Type: application/wasm
+
+/*.pck
+  Content-Type: application/octet-stream

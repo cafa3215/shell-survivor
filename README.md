@@ -22,7 +22,8 @@
 ### 手机 / 线上试玩
 
 - 导出 Web 版后可用手机浏览器打开链接游玩（触摸摇杆已内置）
-- 完整步骤见 **[docs/MOBILE_DEPLOY.md](docs/MOBILE_DEPLOY.md)**（itch.io / GitHub Pages / APK）
+- 通用部署：[docs/MOBILE_DEPLOY.md](docs/MOBILE_DEPLOY.md)（itch.io / GitHub Pages / APK）
+- **自有域名**：[docs/CUSTOM_DOMAIN_DEPLOY.md](docs/CUSTOM_DOMAIN_DEPLOY.md)（Nginx / Cloudflare + 子域名）
 
 ---
 
