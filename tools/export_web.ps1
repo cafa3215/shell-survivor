@@ -46,14 +46,12 @@ Write-Host "Godot: $godot"
 Write-Host "Project: $ProjectPath"
 Write-Host "Preset: $PresetName"
 
-& $godot --headless --path $ProjectPath --export-release $PresetName (Join-Path $buildDir "index.html")
+& $godot --headless --path $ProjectPath --export-release $PresetName (Join-Path $buildDir "game\index.html")
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Web 导出失败。请确认已在 Godot 编辑器安装 Web 导出模板。"
     exit $LASTEXITCODE
 }
 
 Write-Host ""
-Write-Host "导出完成: $buildDir"
-Write-Host "本地预览: 用任意静态服务器打开 build/web/index.html"
-Write-Host "  npx serve build/web"
-Write-Host "手机访问: 部署到 GitHub Pages / itch.io / Cloudflare Pages 后用浏览器打开链接"
+Write-Host "导出完成: $buildDir\game"
+Write-Host "访问路径: https://你的域名/game/"

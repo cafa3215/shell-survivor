@@ -1,0 +1,18 @@
+[
+	{
+		"id": "story",
+		"title": "OUR STORY",
+		"desc": "属于我们的回忆馆 · 登录后浏览与管理回忆内容。",
+		"tag": "回忆馆",
+		"path": "/story/",
+		"enabled": true
+	},
+	{
+		"id": "game",
+		"title": "Shell Survivor",
+		"desc": "俯视角生存射击 · 手机横屏，左下摇杆移动，右下冲刺。",
+		"tag": "游戏",
+		"path": "/game/",
+		"enabled": true
+	}
+]
