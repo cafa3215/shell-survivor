@@ -6,15 +6,16 @@ extends CanvasLayer
 
 const DEFAULT_DURATION := 2.5
 const NOTIFY_Z_INDEX := 200
+const FONT_PATH := "res://assets/fonts/simhei.ttf"
 
 # 通知配置
 const CONFIGS := {
-	"info": {"icon": "ℹ️", "variation": &"Notification"},
-	"success": {"icon": "✅", "variation": &"NotificationSuccess"},
-	"warning": {"icon": "⚠️", "variation": &"NotificationWarning"},
-	"error": {"icon": "❌", "variation": &"NotificationWarning"},
-	"item": {"icon": "⭐", "variation": &"NotificationSuccess"},
-	"achievement": {"icon": "🏆", "variation": &"NotificationSuccess"}
+	"info": {"icon": "息", "variation": &"Notification"},
+	"success": {"icon": "成", "variation": &"NotificationSuccess"},
+	"warning": {"icon": "!", "variation": &"NotificationWarning"},
+	"error": {"icon": "错", "variation": &"NotificationWarning"},
+	"item": {"icon": "物", "variation": &"NotificationSuccess"},
+	"achievement": {"icon": "绩", "variation": &"NotificationSuccess"}
 }
 
 var _queue: Array[Dictionary] = []
@@ -59,13 +60,17 @@ func _show_next() -> void:
 	var notify := _create_notification(data.msg, cfg, String(data.type))
 	_current = notify
 	add_child(notify)
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	
 	# 动画序列
 	var tween := create_tween().set_trans(UIMotion.TRANS_ENTRANCE).set_ease(UIMotion.EASE_OUT).set_parallel(true)
 	
-	# 滑入
-	var target_x := _viewport_size().x - notify.size.x - 20.0
-	notify.position.x = _viewport_size().x
+	# 滑入（保证不超出左边界）
+	var vp := _viewport_size()
+	var target_x := maxf(16.0, vp.x - notify.size.x - 20.0)
+	notify.position = Vector2(vp.x, vp.y * 0.12)
 	tween.tween_property(notify, "position:x", target_x, UIMotion.MOTION_PANEL)
 
 	# 等待后滑出
@@ -84,40 +89,51 @@ func _show_next() -> void:
 	notify.queue_free()
 	_show_next()
 
+func _notification_font() -> Font:
+	var theme := ThemeDB.get_default_theme()
+	if theme and theme.default_font:
+		return theme.default_font
+	return load(FONT_PATH) as Font
+
+
+func _measure_notification(msg: String, vp_size: Vector2) -> Vector2:
+	var font := _notification_font()
+	var font_size := 16
+	var max_text_w := maxf(120.0, vp_size.x - 56.0)
+	var text_size := Vector2(max_text_w, 0.0)
+	if font:
+		text_size = font.get_multiline_string_size(
+			msg,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			max_text_w,
+			font_size,
+			-1,
+			TextServer.BREAK_MANDATORY
+		)
+	var width := clampf(text_size.x + 36.0, 160.0, vp_size.x - 32.0)
+	var height := clampf(text_size.y + 24.0, 48.0, 120.0)
+	return Vector2(width, height)
+
+
 func _create_notification(msg: String, cfg: Dictionary, ntype: String) -> Control:
+	var vp_size := _viewport_size()
+	var panel_size := _measure_notification(msg, vp_size)
+
 	var root := PanelContainer.new()
 	root.z_index = NOTIFY_Z_INDEX
 	root.theme_type_variation = cfg.get("variation", &"Notification")
-	root.custom_minimum_size = Vector2(400, 70)
-	root.clip_contents = true
-
-	var vp_size := _viewport_size()
-	root.size = root.custom_minimum_size
-	root.position = Vector2(vp_size.x - root.size.x - 20.0, vp_size.y * 0.12)
+	root.custom_minimum_size = panel_size
+	root.size = panel_size
+	root.clip_contents = false
 
 	var margin := MarginContainer.new()
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
 	root.add_child(margin)
-
-	var hbox := HBoxContainer.new()
-	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hbox.add_theme_constant_override("separation", 10)
-	margin.add_child(hbox)
-
-	var icon := Label.new()
-	icon.text = cfg.icon
-	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	icon.custom_minimum_size = Vector2(36, 0)
-	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	icon.theme_type_variation = &"Meta"
-	hbox.add_child(icon)
 
 	var label := Label.new()
 	label.text = msg
@@ -126,9 +142,8 @@ func _create_notification(msg: String, cfg: Dictionary, ntype: String) -> Contro
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	label.custom_minimum_size = Vector2(300, 0)
 	label.theme_type_variation = _notification_label_variation(ntype)
-	hbox.add_child(label)
+	margin.add_child(label)
 
 	return root
 
@@ -159,4 +174,4 @@ static func show_fusion_ready(fusion_name: String) -> void:
 	notify_message("融合可激活: " + fusion_name, 4.0, "achievement")
 
 static func show_boss_warning() -> void:
-	notify_message("⚠️ 首领即将来袭!", 3.0, "warning")
+	notify_message("首领即将来袭!", 3.0, "warning")

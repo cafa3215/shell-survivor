@@ -7,7 +7,7 @@
 - KayKit 3D 主角默认关闭，保留 2D 骨架立绘；`WeaponProjectileLayer` 由 `WeaponSystem` 运行时按需创建。
 
 ### Pacing / Run Length
-- **首领 15 分钟**：`BOSS_SPAWN_TIME` 22→15 分；整局 `RUN_TIME` 25→18 分（首领后 3 分钟撤离窗口）。
+- **首领 15 分钟**：`BOSS_SPAWN_TIME` 22→15 分；整局 `RUN_TIME` 25→18 分（持久模式；现网击破后撤离窗为 30 秒）。
 - **精英事件**：5 / 8 / 12 分钟三档 mini-boss；首波（5 分）加强 HP/伤害、屏幕闪白、震屏、更多经验球与 4:30 预告。
 - **HUD 目标**：`🎯 首领 XX:XX` 与里程碑同步新节奏。
 

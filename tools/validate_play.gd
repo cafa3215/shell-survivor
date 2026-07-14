@@ -17,7 +17,7 @@ func _boot() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	var btn := main.get_node_or_null("MenuLayer/Root/Panel/StartButton") as Button
+	var btn := main.get_node_or_null("MenuLayer/Root/Panel/Margin/VBox/StartButton") as Button
 	if btn == null:
 		push_error("validate_play: StartButton missing")
 		quit(1)

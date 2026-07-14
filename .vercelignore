@@ -1,0 +1,14 @@
+.godot/
+.git/
+.github/
+assets/
+scenes/
+scripts/
+tools/
+docs/
+deploy/
+*.gd
+*.tscn
+*.import
+project.godot
+export_presets.cfg

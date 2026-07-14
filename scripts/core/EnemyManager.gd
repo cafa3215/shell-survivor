@@ -49,10 +49,24 @@ var _elapsed_minutes_cache := 0.0
 var _enemy_hp_scale := 1.0
 var _enemy_dmg_scale := 1.0
 var _enemy_speed_scale := 1.0
+## 本局难度/契约对敌人的额外倍率（开局由 Game 写入）
+var _run_hp_mul := 1.0
+var _run_dmg_mul := 1.0
 
 # ========== 被动效果相关 ==========
 var _freeze_time: PackedFloat32Array  # 冰冻时间
+var _move_slow_rem: PackedFloat32Array
+var _move_slow_factor: PackedFloat32Array
 var _visual_scale_mul: PackedFloat32Array
+var _mini_boss_flags: Dictionary = {}  # idx -> wave_index+1
+## Boss 特殊弹着点 / 残影
+var _boss_hazard_points: Array[Dictionary] = []
+var _boss_shadow_trails: Array[Dictionary] = []
+var _boss_pickup_siphon_rem := 0.0
+var _boss_safe_ring_rem := 0.0
+var _boss_safe_ring_radius := 0.0
+var _boss_charge_field_rem := 0.0
+var _boss_charge_field_radius := 0.0
 
 # 高威胁击杀确认（低噪声）：节流 + 简短提示
 var _threat_kill_cd := 0.0
@@ -101,6 +115,8 @@ func _ready() -> void:
 	_charger_windup.resize(GameDB.ENEMY_MAX)
 	_spitter_windup.resize(GameDB.ENEMY_MAX)
 	_freeze_time.resize(GameDB.ENEMY_MAX)
+	_move_slow_rem.resize(GameDB.ENEMY_MAX)
+	_move_slow_factor.resize(GameDB.ENEMY_MAX)
 	_visual_scale_mul.resize(GameDB.ENEMY_MAX)
 	for _vi in GameDB.ENEMY_MAX:
 		_visual_scale_mul[_vi] = 1.0
@@ -232,6 +248,13 @@ func _process(delta: float) -> void:
 		if _stun_time[i] > 0.0:
 			_stun_time[i] = maxf(_stun_time[i] - delta, 0.0)
 			continue
+		if _move_slow_rem[i] > 0.0:
+			_move_slow_rem[i] = maxf(_move_slow_rem[i] - delta, 0.0)
+		var move_mul := 1.0
+		if _move_slow_rem[i] > 0.0:
+			move_mul = clampf(1.0 - _move_slow_factor[i], 0.25, 1.0)
+		var base_speed := speed[i]
+		speed[i] = base_speed * move_mul
 		var dir := (p - positions[i]).normalized()
 		var k := kind[i]
 		_special_cd[i] = max(_special_cd[i] - delta, 0.0)
@@ -261,6 +284,7 @@ func _process(delta: float) -> void:
 				positions[i] += dir * speed[i] * 1.1 * delta
 				if positions[i].distance_to(p) < BOOMER_EXPLODE_RADIUS:
 					_player_take_damage(damage[i] * 1.4)
+					speed[i] = base_speed
 					kill_enemy(i, 0.0, false, &"")
 					_flush_kill_explosion_queue()
 					continue
@@ -322,6 +346,7 @@ func _process(delta: float) -> void:
 				positions[i] += move_dir * speed[i] * delta
 		if positions[i].distance_to(p) < CONTACT_RADIUS:
 			_player_take_damage(damage[i])
+		speed[i] = base_speed
 	for i in active_indices:
 		# 根据敌人类型设置不同大小（更大差异）
 		var k := kind[i]
@@ -437,6 +462,11 @@ func _build_threat_targets(max_n: int) -> Array[Dictionary]:
 		out = out.slice(0, max_n)
 	return out
 
+func set_run_scaling(hp_mul: float, dmg_mul: float) -> void:
+	_run_hp_mul = maxf(hp_mul, 0.25)
+	_run_dmg_mul = maxf(dmg_mul, 0.25)
+
+
 func spawn_enemy(pos: Vector2, kind_id: int = 0) -> int:
 	var idx := pool.alloc()
 	if idx == -1:
@@ -446,15 +476,17 @@ func spawn_enemy(pos: Vector2, kind_id: int = 0) -> int:
 	positions[idx] = pos
 	kind[idx] = kind_id
 	# 应用属性缩放
-	hp[idx] = float(cfg["hp"]) * _enemy_hp_scale
+	hp[idx] = float(cfg["hp"]) * _enemy_hp_scale * _run_hp_mul
 	speed[idx] = (float(cfg["speed"]) + randf_range(-4.0, 6.0)) * _enemy_speed_scale * GameDB.ENEMY_SPEED_GLOBAL_MUL
-	damage[idx] = float(cfg["damage"]) * _enemy_dmg_scale
+	damage[idx] = float(cfg["damage"]) * _enemy_dmg_scale * _run_dmg_mul
 	_special_cd[idx] = randf_range(0.0, 1.4)
 	_stun_time[idx] = 0.0
 	_ai_phase[idx] = randf() * TAU
 	_charger_windup[idx] = 0.0
 	_spitter_windup[idx] = 0.0
 	_freeze_time[idx] = 0.0
+	_move_slow_rem[idx] = 0.0
+	_move_slow_factor[idx] = 0.0
 	_visual_scale_mul[idx] = 1.0
 	var atlas_slot: int = _enemy_atlas_slot(kind_id)
 	_mm.set_instance_custom_data(
@@ -472,10 +504,41 @@ func spawn_enemy(pos: Vector2, kind_id: int = 0) -> int:
 func mark_mini_boss(idx: int, wave_index: int) -> void:
 	if idx < 0 or idx >= GameDB.ENEMY_MAX:
 		return
+	_mini_boss_flags[idx] = wave_index + 1
 	_visual_scale_mul[idx] = 1.42 if wave_index == 0 else 1.24
 	var k := kind[idx]
 	var base_color: Color = GameDB.ENEMY_TYPES[k]["color"]
 	_mm.set_instance_color(idx, base_color.lerp(Color(1.0, 0.35, 0.28, 1.0), 0.35))
+
+
+## 精英猎杀修饰：切换种类但保留已缩放的战斗数值（供「冲锋」提示对齐真实 AI）
+func set_kind_keep_combat_stats(idx: int, kind_id: int) -> void:
+	if idx < 0 or idx >= GameDB.ENEMY_MAX:
+		return
+	kind_id = clampi(kind_id, 0, GameDB.ENEMY_TYPES.size() - 1)
+	kind[idx] = kind_id
+	_charger_windup[idx] = 0.0
+	_spitter_windup[idx] = 0.0
+	_special_cd[idx] = 0.12
+	var atlas_slot: int = _enemy_atlas_slot(kind_id)
+	_mm.set_instance_custom_data(
+		idx,
+		Color(float(atlas_slot) / 3.0, float(kind_id) / 9.0, randf() * 0.45 + 0.35, 1.0)
+	)
+	var base_color: Color = GameDB.ENEMY_TYPES[kind_id]["color"]
+	_mm.set_instance_color(idx, base_color)
+
+
+func is_mini_boss(idx: int) -> bool:
+	return _mini_boss_flags.has(idx)
+
+
+func consume_mini_boss_flag(idx: int) -> int:
+	if not _mini_boss_flags.has(idx):
+		return -1
+	var wave := int(_mini_boss_flags[idx]) - 1
+	_mini_boss_flags.erase(idx)
+	return wave
 
 # ============================================
 # SpatialGrid 加速的伤害查询
@@ -504,19 +567,42 @@ func apply_damage_circle(center: Vector2, radius: float, dmg: float, weapon_id: 
 	return hits
 
 
+func _player_outgoing_damage_mul() -> float:
+	var ss := get_parent().get_node_or_null("SkillSystem")
+	if ss == null or not ("stats" in ss):
+		return 1.0
+	var stats: Dictionary = ss.stats
+	if stats.has("armor_break"):
+		return 1.0 + maxf(float(stats["armor_break"]), 0.0)
+	return 1.0
+
+
+func _notify_player_dealt_damage(dealt: float) -> void:
+	if dealt <= 0.0 or _player == null:
+		return
+	if _player.has_method("apply_lifesteal_from_damage"):
+		_player.apply_lifesteal_from_damage(dealt)
+
+
+func _scaled_outgoing_damage(base_dmg: float) -> float:
+	return maxf(0.0, base_dmg * _player_outgoing_damage_mul())
+
+
 func _apply_damage_circle_sweep(center: Vector2, radius: float, dmg: float, explicit_weapon: StringName = &"") -> int:
 	var sweep_hits := 0
 	var kill_w := _resolve_kill_weapon_for_sweep(explicit_weapon)
+	var effective_dmg := _scaled_outgoing_damage(dmg)
 	var candidates := grid.query_indices(center, radius)
 	for i in candidates:
 		if not pool.is_alive(i):
 			continue
 		if positions[i].distance_to(center) <= radius:
-			hp[i] -= dmg
+			hp[i] -= effective_dmg
+			_notify_player_dealt_damage(effective_dmg)
 			sweep_hits += 1
 			if hp[i] <= 0.0:
-				var crit_kill := dmg >= maxf(hp[i] + dmg, 1.0) * 1.12 or dmg >= 64.0
-				kill_enemy(i, dmg, crit_kill, kill_w)
+				# 击杀档不再用伤害阈值冒充「暴击」；沉重击杀走威胁反馈
+				kill_enemy(i, effective_dmg, false, kill_w)
 	return sweep_hits
 
 
@@ -569,14 +655,15 @@ func _apply_piercing_line_damage_internal(from: Vector2, to: Vector2, half_width
 			damaged[i] = true
 			if collect_positions:
 				out_hit_positions.append(positions[i])
-			hp[i] -= damage
+			var effective_dmg := _scaled_outgoing_damage(damage)
+			hp[i] -= effective_dmg
+			_notify_player_dealt_damage(effective_dmg)
 			hits += 1
 			if weapon_id == &"active_laser":
 				var caster_id := _player.get_instance_id() if _player else 0
-				EventBus.skill_hit.emit(&"SK_Player_ActiveLaser_01", caster_id, i, cast_seq, &"energy", damage, false, Time.get_ticks_msec())
+				EventBus.skill_hit.emit(&"SK_Player_ActiveLaser_01", caster_id, i, cast_seq, &"energy", effective_dmg, false, Time.get_ticks_msec())
 			if hp[i] <= 0.0:
-				var crit_kill := damage >= maxf(hp[i] + damage, 1.0) * 1.12 or damage >= 64.0
-				kill_enemy(i, damage, crit_kill, weapon_id)
+				kill_enemy(i, effective_dmg, false, weapon_id)
 	while not _pending_kill_explosions.is_empty():
 		var e: Dictionary = _pending_kill_explosions.pop_front()
 		var ew: StringName = StringName(e.get("weapon", &"explosion_kill"))
@@ -595,6 +682,7 @@ func kill_enemy(i: int, hit_power: float = 0.0, crit_kill: bool = false, killing
 		return
 	var pos := positions[i]
 	var k := kind[i]
+	var mini_wave := consume_mini_boss_flag(i)
 	_unregister_pool_alive(i)
 	_mm.set_instance_transform_2d(i, Transform2D(0.0, Vector2(-99999, -99999)))
 	_mm.set_instance_color(i, Color(1, 1, 1, 0))
@@ -603,6 +691,10 @@ func kill_enemy(i: int, hit_power: float = 0.0, crit_kill: bool = false, killing
 	pool.release(i)
 	var kind_name := StringName(str(GameDB.ENEMY_TYPES[k]["name"]))
 	EventBus.enemy_killed.emit(kind_name)
+	if mini_wave >= 0:
+		var g := get_parent()
+		if g != null and g.has_method("on_mini_boss_killed"):
+			g.call("on_mini_boss_killed", pos, mini_wave)
 	_threat_kill_feedback(k, pos)
 	_emit_kill_feedback(pos, k, hit_power, crit_kill, killing_weapon)
 	# 击杀特效：根据敌人类型播放不同粒子
@@ -699,16 +791,31 @@ func _on_enemy_stunned(world_pos: Vector2, duration: float) -> void:
 		if positions[i].distance_to(world_pos) <= STUN_RANGE:
 			_stun_time[i] = maxf(_stun_time[i], dur)
 
-# 冰冻敌人
-func freeze_enemy(world_pos: Vector2, duration: float) -> void:
+# 冰冻敌人（radius 默认 80；冰域专精可扩扩散半径）
+func freeze_enemy(world_pos: Vector2, duration: float, radius: float = 80.0) -> void:
 	var dur := maxf(duration, 0.05)
-	var candidates := grid.query_indices(world_pos, 80.0)
+	var r := maxf(24.0, radius)
+	var candidates := grid.query_indices(world_pos, r)
 	for i in candidates:
 		if not pool.is_alive(i):
 			continue
-		if positions[i].distance_to(world_pos) <= 80.0:
+		if positions[i].distance_to(world_pos) <= r:
 			_freeze_time[i] = maxf(_freeze_time[i], dur)
 			EventBus.enemy_frozen.emit(positions[i], dur)
+
+
+## 光环减速：slow_amount 0~1（0.4=移速降 40%），持续 duration 秒
+func apply_slow_in_circle(center: Vector2, radius: float, slow_amount: float, duration: float) -> void:
+	var amt := clampf(slow_amount, 0.05, 0.8)
+	var dur := maxf(duration, 0.05)
+	var candidates := grid.query_indices(center, radius)
+	for i in candidates:
+		if not pool.is_alive(i):
+			continue
+		if positions[i].distance_to(center) > radius:
+			continue
+		_move_slow_rem[i] = maxf(_move_slow_rem[i], dur)
+		_move_slow_factor[i] = maxf(_move_slow_factor[i], amt)
 
 func get_closest_enemy_pos(center: Vector2, max_range := INF) -> Variant:
 	var nearest: Variant = null
@@ -863,7 +970,7 @@ func spawn_boss(pos: Vector2) -> void:
 	_boss_alive = true
 	_boss_type = randi() % GameDB.BOSS_TYPES.size()  # 随机选择BOSS类型
 	var boss_cfg: Dictionary = GameDB.BOSS_TYPES[_boss_type]
-	_boss_hp_max = 3000.0 * float(boss_cfg.get("hp_scale", 1.0))
+	_boss_hp_max = 3000.0 * float(boss_cfg.get("hp_scale", 1.0)) * _run_hp_mul
 	_boss_hp = _boss_hp_max
 	_boss_pos = pos
 	_boss_speed = 46.0 * float(boss_cfg.get("speed_scale", 1.0))
@@ -872,6 +979,11 @@ func spawn_boss(pos: Vector2) -> void:
 	_boss_pending_kind = 0
 	_boss_enraged = false
 	_boss_lightning_chain_count = 0
+	_boss_hazard_points.clear()
+	_boss_shadow_trails.clear()
+	_boss_pickup_siphon_rem = 0.0
+	_boss_safe_ring_rem = 0.0
+	_boss_charge_field_rem = 0.0
 	
 	# 通知BOSS生成，显示BOSS类型名称
 	var boss_name := str(boss_cfg.get("name", "暗影巨兽"))
@@ -910,15 +1022,18 @@ func apply_damage_to_boss(center: Vector2, radius: float, dmg: float) -> bool:
 		return false
 	if _boss_pos.distance_to(center) > radius:
 		return false
-	_boss_hp -= dmg
+	var effective_dmg := _scaled_outgoing_damage(dmg)
+	_boss_hp -= effective_dmg
+	_notify_player_dealt_damage(effective_dmg)
 	
-	# 检查狂暴触发（雷霆领主更容易狂暴）
-	var enrage_threshold := 0.3
-	if _boss_type == 1:  # 雷霆领主
-		enrage_threshold = 0.4
+	# 狂暴阈值读 GameDB.BOSS_SKILLS.enrage（雷霆领主可单独覆盖）
+	var enrage_cfg: Dictionary = GameDB.BOSS_SKILLS.get("enrage", {}) as Dictionary
+	var enrage_threshold := float(enrage_cfg.get("hp_threshold", 0.3))
+	if _boss_type == 1:
+		enrage_threshold = float(enrage_cfg.get("hp_threshold_lightning", 0.4))
 	if boss_hp_ratio() <= enrage_threshold and not _boss_enraged:
 		_boss_enraged = true
-		_boss_speed *= 1.3
+		_boss_speed *= float(enrage_cfg.get("speed_mul", 1.3))
 		NotificationSystem.notify_message("首领进入狂暴状态！", 2.0, "error")
 		CombatFeedback.shake("boss", 6.0, 0.5)
 	
@@ -936,8 +1051,11 @@ func _emit_kill_feedback(pos: Vector2, k: int, hit_power: float, crit_kill: bool
 	var tier := &"normal"
 	if k == 3 or k == 6 or k == 7 or k == 9:
 		tier = &"threat"
-	elif crit_kill or hit_power >= 58.0:
+	elif crit_kill:
 		tier = &"crit"
+	elif hit_power >= 58.0:
+		# 高伤击杀 = 威胁反馈，不是暴击
+		tier = &"threat"
 	_combo_kill_count += 1
 	_combo_kill_decay = 1.9
 	EventBus.enemy_killed_detailed.emit(pos, tier, _combo_kill_count, 0, killing_weapon)
@@ -954,33 +1072,92 @@ func _emit_kill_feedback(pos: Vector2, k: int, hit_power: float, crit_kill: bool
 		_:
 			pass  # 普通击杀不播 hit，减少刺耳连击
 
-# 闪电链技能 - 雷霆领主特殊技能
+# 闪电链技能 - 雷霆领主：对玩家连打多段落点（不再误伤己方小兵）
 func boss_lightning_chain() -> void:
-	if _boss_type != 1:  # 只有雷霆领主使用
+	if not _boss_alive or _player == null:
 		return
-	_boss_lightning_chain_count = 5  # 5次跳跃
-	_apply_lightning_chain(_boss_pos, 5)
+	var skill: Dictionary = GameDB.BOSS_SKILLS.get("lightning_chain", {})
+	var chain_n := int(skill.get("chain_count", 5))
+	var base_dmg := float(skill.get("damage", 25.0)) * float(GameDB.BOSS_TYPES.get(_boss_type, {}).get("dmg_scale", 1.0))
+	if _boss_enraged:
+		base_dmg *= float(GameDB.BOSS_SKILLS.get("enrage", {}).get("dmg_mul", 1.35))
+	_boss_attack_cd = float(skill.get("cooldown", 3.0))
+	EventBus.boss_warning.emit(0.85, 0.55)
+	_boss_hazard_points.clear()
+	var origin: Vector2 = _player.global_position
+	for i in chain_n:
+		var ang := TAU * float(i) / float(maxi(1, chain_n)) + randf() * 0.4
+		var hop := origin + Vector2(cos(ang), sin(ang)) * (42.0 + float(i) * 18.0)
+		_boss_hazard_points.append({"pos": hop, "radius": 72.0, "dmg": base_dmg * (1.0 - float(i) * 0.08)})
+		EventBus.lightning_strike.emit(_boss_pos if i == 0 else Vector2(_boss_hazard_points[i - 1]["pos"]), hop)
+	_boss_pending_t = 0.55
+	_boss_pending_kind = 4
+	_boss_pending_radius = 72.0
+	_boss_pending_damage = base_dmg
+	EventBus.boss_telegraph.emit(2, origin, Vector2.ZERO, 110.0, _boss_pending_t)
 
-func _apply_lightning_chain(pos: Vector2, jumps: int) -> void:
-	if jumps <= 0:
+
+func boss_magma_barrage() -> void:
+	if not _boss_alive or _player == null:
 		return
-	var nearest_enemies: Array[int] = []
-	var min_dist := 150.0
-	for idx in _pool_alive_list:
-		var d := positions[idx].distance_to(pos)
-		if d < min_dist:
-			nearest_enemies.append(idx)
-	nearest_enemies.sort_custom(func(a, b): return positions[a].distance_to(pos) < positions[b].distance_to(pos))
-	var targets: int = mini(jumps, nearest_enemies.size())
-	for i in targets:
-		var e_idx := nearest_enemies[i]
-		var dmg := 25.0 * (1.0 if not _boss_enraged else 1.5)
-		hp[e_idx] -= dmg
-		# 视觉效果
-		EventBus.enemy_stunned.emit(positions[e_idx], 0.3)
-		# 继续链式跳跃
-		if i < targets - 1:
-			_apply_lightning_chain(positions[e_idx], 1)
+	var skill: Dictionary = GameDB.BOSS_SKILLS.get("magma_barrage", {})
+	var n := int(skill.get("projectile_count", 8))
+	var base_dmg := float(skill.get("damage", 35.0)) * float(GameDB.BOSS_TYPES.get(_boss_type, {}).get("dmg_scale", 1.0))
+	if _boss_enraged:
+		var enrage_cfg: Dictionary = GameDB.BOSS_SKILLS.get("enrage", {}) as Dictionary
+		base_dmg *= float(enrage_cfg.get("dmg_mul_magma", enrage_cfg.get("dmg_mul", 1.25)))
+	_boss_attack_cd = float(skill.get("cooldown", 4.0))
+	EventBus.boss_warning.emit(1.0, 0.7)
+	_boss_hazard_points.clear()
+	var target: Vector2 = _player.global_position
+	for i in n:
+		var ang := TAU * float(i) / float(maxi(1, n)) + randf_range(-0.12, 0.12)
+		var land := target + Vector2(cos(ang), sin(ang)) * randf_range(70.0, 210.0)
+		_boss_hazard_points.append({"pos": land, "radius": 68.0, "dmg": base_dmg})
+		EventBus.boss_telegraph.emit(0, land, Vector2.ZERO, 68.0, 0.7)
+	_boss_pending_t = 0.7
+	_boss_pending_kind = 5
+	_boss_pending_radius = 68.0
+	_boss_pending_damage = base_dmg
+
+
+func boss_shadow_afterimage(dir: Vector2) -> void:
+	_boss_attack_dash(dir)
+	# 冲刺轨迹残影：短暂伤害区
+	for j in 4:
+		var trail_pos := _boss_pos + dir * (40.0 + float(j) * 55.0)
+		_boss_shadow_trails.append({"pos": trail_pos, "radius": 52.0, "rem": 2.8, "dmg": 7.0})
+
+
+func boss_shadow_siphon() -> void:
+	_boss_attack_pulse(Vector2.RIGHT)
+	_boss_pickup_siphon_rem = 5.0
+	NotificationSystem.notify_message("暗影吸能：拾取范围被压制！", 1.6, "warning")
+	var g := get_parent()
+	if g != null and g.has_method("apply_boss_pickup_siphon"):
+		g.call("apply_boss_pickup_siphon", 5.0)
+
+
+func boss_shadow_collapse() -> void:
+	if _player == null:
+		return
+	_boss_attack_cd = 2.2
+	_boss_safe_ring_rem = 3.2
+	_boss_safe_ring_radius = 300.0
+	EventBus.boss_warning.emit(1.0, 1.0)
+	NotificationSystem.notify_message("暗影收缩圈：进入安全圈！", 1.8, "error")
+	EventBus.boss_telegraph.emit(0, _boss_pos, Vector2.ZERO, _boss_safe_ring_radius, 0.8)
+
+
+func boss_thunder_field() -> void:
+	if _player == null:
+		return
+	_boss_attack_cd = 2.8
+	_boss_charge_field_rem = 4.5
+	_boss_charge_field_radius = 160.0
+	EventBus.boss_warning.emit(0.7, 0.5)
+	NotificationSystem.notify_message("充能场：待在电圈内避开雷暴外圈！", 1.7, "warning")
+	EventBus.boss_telegraph.emit(0, _boss_pos, Vector2.ZERO, _boss_charge_field_radius, 0.5)
 
 func _enemy_atlas_slot(kind_id: int) -> int:
 	match kind_id:
@@ -1316,45 +1493,148 @@ func _update_boss(delta: float) -> void:
 					var to_p := (_player.global_position - _boss_pos)
 					if to_p.length() <= _boss_pending_radius and to_p.normalized().dot(_boss_pending_dir) >= 0.65:
 						_player_take_damage(_boss_pending_damage)
+				4, 5: # lightning hops / magma barrage points
+					for hz in _boss_hazard_points:
+						var hz_pos: Vector2 = hz.get("pos", Vector2.ZERO)
+						var hz_r := float(hz.get("radius", _boss_pending_radius))
+						var hz_dmg := float(hz.get("dmg", _boss_pending_damage))
+						if p.distance_to(hz_pos) <= hz_r:
+							_player_take_damage(hz_dmg)
+					_boss_hazard_points.clear()
 			_boss_pending_radius = 0.0
 			_boss_pending_damage = 0.0
 			_boss_pending_kind = 0
+	_tick_boss_special_zones(delta, p)
 	if _boss_pos.distance_to(p) < BOSS_CONTACT_RADIUS:
-		_player_take_damage(BOSS_CONTACT_DMG)
+		_player_take_damage(BOSS_CONTACT_DMG * _run_dmg_mul)
 	_boss_attack_cd -= delta
 	if _boss_attack_cd <= 0.0:
 		_boss_choose_attack(p, dir)
 
-# BOSS混合攻击选择：不再固定每阶段一种攻击，而是按概率混合
+
+func _tick_boss_special_zones(delta: float, p: Vector2) -> void:
+	# 暗影残影路径
+	var i := 0
+	while i < _boss_shadow_trails.size():
+		var trail: Dictionary = _boss_shadow_trails[i]
+		trail["rem"] = float(trail.get("rem", 0.0)) - delta
+		if float(trail["rem"]) <= 0.0:
+			_boss_shadow_trails.remove_at(i)
+			continue
+		if p.distance_to(Vector2(trail.get("pos", Vector2.ZERO))) <= float(trail.get("radius", 40.0)):
+			_player_take_damage(float(trail.get("dmg", 6.0)) * delta * 3.2)
+		_boss_shadow_trails[i] = trail
+		i += 1
+	# 收缩安全圈：圈外持续受伤，圈逐渐缩小
+	if _boss_safe_ring_rem > 0.0:
+		_boss_safe_ring_rem = maxf(0.0, _boss_safe_ring_rem - delta)
+		_boss_safe_ring_radius = maxf(90.0, _boss_safe_ring_radius - delta * 48.0)
+		if p.distance_to(_boss_pos) > _boss_safe_ring_radius:
+			_player_take_damage(11.0 * delta)
+	# 充能场：圈外受伤，圈内短时安全
+	if _boss_charge_field_rem > 0.0:
+		_boss_charge_field_rem = maxf(0.0, _boss_charge_field_rem - delta)
+		if p.distance_to(_boss_pos) > _boss_charge_field_radius:
+			_player_take_damage(9.0 * delta)
+	if _boss_pickup_siphon_rem > 0.0:
+		_boss_pickup_siphon_rem = maxf(0.0, _boss_pickup_siphon_rem - delta)
+
+
+# BOSS混合攻击选择：按类型注入专属机制
 func _boss_choose_attack(p: Vector2, dir: Vector2) -> void:
-	var hp_ratio := _boss_hp / _boss_hp_max
 	var phase := boss_phase()
 	var roll := randf()
-	
+	match _boss_type:
+		1: # 雷霆领主
+			_boss_choose_lightning(phase, roll, dir)
+		2: # 熔岩巨魔
+			_boss_choose_magma(phase, roll, dir)
+		_:
+			_boss_choose_shadow(phase, roll, dir)
+
+
+func _boss_choose_shadow(phase: int, roll: float, dir: Vector2) -> void:
 	if phase == 1:
-		# 阶段1: 主要冲撞(70%)，偶尔脉冲(30%)
-		if roll < 0.7:
+		if roll < 0.55:
 			_boss_attack_dash(dir)
-		else:
+		elif roll < 0.85:
 			_boss_attack_pulse(dir)
+		else:
+			boss_shadow_afterimage(dir)
 	elif phase == 2:
-		# 阶段2: 冲撞(40%) + 脉冲(35%) + 锥形(25%)
-		if roll < 0.4:
-			_boss_attack_dash(dir)
-		elif roll < 0.75:
-			_boss_attack_pulse(dir)
-		else:
-			_boss_attack_cone(dir)
-	else:
-		# 阶段3: 高频混合 + 组合技
-		if roll < 0.3:
+		if roll < 0.35:
 			_boss_attack_dash(dir)
 		elif roll < 0.55:
 			_boss_attack_pulse(dir)
-		elif roll < 0.8:
+		elif roll < 0.75:
 			_boss_attack_cone(dir)
 		else:
+			boss_shadow_siphon()
+	else:
+		if roll < 0.25:
 			_boss_attack_combo(dir)
+		elif roll < 0.5:
+			boss_shadow_afterimage(dir)
+		elif roll < 0.72:
+			_boss_attack_cone(dir)
+		else:
+			boss_shadow_collapse()
+
+
+func _boss_choose_lightning(phase: int, roll: float, dir: Vector2) -> void:
+	if phase == 1:
+		if roll < 0.45:
+			_boss_attack_dash(dir)
+		elif roll < 0.75:
+			boss_lightning_chain()
+		else:
+			_boss_attack_pulse(dir)
+	elif phase == 2:
+		if roll < 0.3:
+			boss_lightning_chain()
+		elif roll < 0.55:
+			boss_thunder_field()
+		elif roll < 0.8:
+			_boss_attack_pulse(dir)
+		else:
+			_boss_attack_dash(dir)
+	else:
+		if roll < 0.35:
+			boss_lightning_chain()
+		elif roll < 0.6:
+			boss_thunder_field()
+		elif roll < 0.8:
+			_boss_attack_combo(dir)
+		else:
+			_boss_attack_cone(dir)
+
+
+func _boss_choose_magma(phase: int, roll: float, dir: Vector2) -> void:
+	if phase == 1:
+		if roll < 0.5:
+			_boss_attack_dash(dir)
+		elif roll < 0.8:
+			boss_magma_barrage()
+		else:
+			_boss_attack_pulse(dir)
+	elif phase == 2:
+		if roll < 0.35:
+			boss_magma_barrage()
+		elif roll < 0.6:
+			_boss_attack_cone(dir)
+		elif roll < 0.8:
+			boss_shadow_afterimage(dir) # 岩浆路径残影
+		else:
+			_boss_attack_dash(dir)
+	else:
+		if roll < 0.4:
+			boss_magma_barrage()
+		elif roll < 0.65:
+			_boss_attack_combo(dir)
+		elif roll < 0.85:
+			boss_shadow_collapse() # 地壳裂变：收缩圈
+		else:
+			_boss_attack_cone(dir)
 
 func _boss_attack_dash(dir: Vector2) -> void:
 	_boss_attack_cd = 1.6

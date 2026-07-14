@@ -66,7 +66,7 @@ offset_bottom = 70.0
 alignment = 1
 
 [node name="PauseIcon" type="Label" parent="MainPanel/TitleContainer"]
-text = "⏸"
+text = "停"
 theme_type_variation = &"LabelMeta"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -98,17 +98,17 @@ offset_bottom = 280.0
 
 [node name="ResumeButton" type="Button" parent="MainPanel/ButtonList"]
 custom_minimum_size = Vector2(0, 52)
-text = "▶  继续游戏"
+text = "继续游戏"
 theme_type_variation = &"ButtonPrimary"
 
 [node name="RestartButton" type="Button" parent="MainPanel/ButtonList"]
 custom_minimum_size = Vector2(0, 52)
-text = "🔄 重新开始"
+text = "重新开始"
 theme_type_variation = &"ButtonSecondary"
 
 [node name="MenuButton" type="Button" parent="MainPanel/ButtonList"]
 custom_minimum_size = Vector2(0, 52)
-text = "🏠 返回主菜单"
+text = "返回主菜单"
 theme_type_variation = &"ButtonDanger"
 
 [node name="HintLabel" type="Label" parent="MainPanel"]

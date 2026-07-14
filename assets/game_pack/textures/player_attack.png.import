@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://i5ao4qpsg0i6"
-valid=false
+uid="uid://cg0xfbr7tbjym"
+path="res://.godot/imported/player_attack.png-bb0162510c07692bf2a2c3100385e4f8.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/game_pack/textures/player_attack.png"
+dest_files=["res://.godot/imported/player_attack.png-bb0162510c07692bf2a2c3100385e4f8.ctex"]
 
 [params]
 

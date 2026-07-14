@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://biv1u4hv4auak"
-valid=false
+uid="uid://cy6griq7hns47"
+path="res://.godot/imported/player_hit.png-e428e8ad434ca8ddd3b009b64da095ff.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/game_pack/textures/player_hit.png"
+dest_files=["res://.godot/imported/player_hit.png-e428e8ad434ca8ddd3b009b64da095ff.ctex"]
 
 [params]
 

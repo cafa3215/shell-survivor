@@ -1,0 +1,42 @@
+[remap]
+
+importer="font_data_dynamic"
+type="FontFile"
+uid="uid://cnsimhei01"
+path="res://.godot/imported/simhei.ttf-c9873dea41ea32bddd31d1389ad5b7b4.fontdata"
+
+[deps]
+
+source_file="res://assets/fonts/simhei.ttf"
+dest_files=["res://.godot/imported/simhei.ttf-c9873dea41ea32bddd31d1389ad5b7b4.fontdata"]
+
+[params]
+
+Rendering=null
+antialiasing=1
+generate_mipmaps=false
+disable_embedded_bitmaps=false
+multichannel_signed_distance_field=false
+msdf_pixel_range=8
+msdf_size=48
+allow_system_fallback=true
+force_autohinter=false
+modulate_color_glyphs=false
+hinting=1
+subpixel_positioning=1
+keep_rounding_remainders=true
+oversampling=0.0
+Fallbacks=null
+fallbacks=["res://assets/fonts/NotoSansSC-VF.ttf"]
+Compress=null
+compress=false
+preload=[{
+"chars": "",
+"compress": false,
+"glyphs": PackedInt32Array(),
+"names": PackedStringArray(),
+"ranges": PackedInt32Array(32, 126, 19968, 40959, 12288, 12351, 65281, 65519, 8192, 8303, 9472, 9727, 9632, 9727, 9728, 9983)
+}]
+language_support={}
+script_support={}
+opentype_features={}

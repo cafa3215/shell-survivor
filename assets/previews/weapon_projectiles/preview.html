@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>武器弹体预览 · Shell Survivor</title>
+  <style>
+    :root {
+      --bg: #0f1118;
+      --card: #171a24;
+      --border: #2a3040;
+      --text: #e8ebf2;
+      --muted: #8b92a6;
+      --accent: #5ec8ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .sub { color: var(--muted); margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .card-head {
+      padding: 12px 16px 8px;
+      border-bottom: 3px solid var(--bar, var(--accent));
+    }
+    .card-head h2 { margin: 0; font-size: 17px; }
+    .card-head .id { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .card-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .panel {
+      background: #0c0e14;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 130px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .panel span { font-size: 11px; color: var(--muted); }
+    .solo img { width: 128px; height: 128px; image-rendering: auto; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+    .volley {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 8px;
+    }
+    .volley img {
+      width: 72px;
+      height: 72px;
+      image-rendering: auto;
+      filter: drop-shadow(0 1px 5px rgba(0,0,0,0.45));
+      opacity: calc(0.55 + var(--i) * 0.2);
+      transform: translateY(calc(var(--i) * 4px));
+    }
+    .note {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .sheet {
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      max-width: 1160px;
+    }
+    .sheet img { width: 100%; display: block; image-rendering: auto; }
+  </style>
+</head>
+<body>
+  <h1>武器弹体预览（待确认）</h1>
+  <p class="sub">
+    高清弹体（192px · 4× 超采样 · 平滑抗锯齿 · 外轮廓描边），每种武器有<strong>独立轮廓</strong>（刃/六角/闪电/火箭/弯月/四旋翼等）。<br>
+    请确认后回复「同意」或指出需要修改的武器。
+  </p>
+
+  <div class="sheet">
+    <img src="preview_sheet.png" alt="总览图" />
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="note">
+    <strong>战斗中使用弹体齐射的武器：</strong>苦无、量子球、雷电、火箭、回旋镖、无人机（直线/弧线多颗弹体，替代细线）。<br>
+    <strong>文件位置：</strong><code>assets/previews/weapon_projectiles/</code>（各武器独立 PNG + preview_sheet.png）<br>
+    <strong>说明：</strong>当前仅为预览资源，你确认后才会保留并合入正式导出流程。
+  </div>
+
+  <script>
+    const weapons = [
+      { id: "kunai", name: "苦无", bar: "#5ec8ff", combat: true, desc: "长刃 + 圆护手 + 缠绳刀柄" },
+      { id: "quantum_ball", name: "量子球", bar: "#7cff7a", combat: true, desc: "大六角 + 轨道节点 + 亮核" },
+      { id: "lightning", name: "雷电", bar: "#7ad4ff", combat: true, desc: "粗锯齿闪电 + 分叉" },
+      { id: "rocket", name: "火箭", bar: "#ff8a45", combat: true, desc: "锥形弹头 + 四尾翼 + 长焰" },
+      { id: "boomerang", name: "回旋镖", bar: "#ffd45a", combat: true, desc: "V 形双翼弯月" },
+      { id: "drone_ab", name: "无人机", bar: "#8ec8ff", combat: true, desc: "十字四旋翼 + 镜头" },
+      { id: "molotov", name: "燃烧瓶", bar: "#ff7a35", combat: false, desc: "抛物线瓶体" },
+      { id: "guardian", name: "守卫者", bar: "#ffd86a", combat: false, desc: "金色菱形护盾刀片" },
+      { id: "frost_aura", name: "冰霜光环", bar: "#7ec8ff", combat: false, desc: "冰蓝环形粒子" },
+      { id: "heal_aura", name: "治疗光环", bar: "#5cff9a", combat: false, desc: "绿色十字光环" },
+      { id: "stun_mine", name: "眩晕地雷", bar: "#c88aff", combat: false, desc: "紫色六边形地雷" },
+    ];
+
+    const grid = document.getElementById("grid");
+    for (const w of weapons) {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.style.setProperty("--bar", w.bar);
+      card.innerHTML = `
+        <div class="card-head">
+          <h2>${w.name}${w.combat ? " ★" : ""}</h2>
+          <div class="id">${w.id} · ${w.desc}</div>
+        </div>
+        <div class="card-body">
+          <div class="panel solo">
+            <img src="${w.id}.png" alt="${w.name}" />
+            <span>单发弹体</span>
+          </div>
+          <div class="panel">
+            <div class="volley">
+              ${[0,1,2].map(i => `<img src="${w.id}.png" style="--i:${i}" alt="" />`).join("")}
+            </div>
+            <span>齐射轨迹示意</span>
+          </div>
+        </div>`;
+      grid.appendChild(card);
+    }
+  </script>
+</body>
+</html>

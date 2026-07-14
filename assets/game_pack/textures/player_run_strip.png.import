@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d21nrvxx3gldj"
-valid=false
+uid="uid://csox72oreur48"
+path="res://.godot/imported/player_run_strip.png-4aa3cd751b90da5029d83c722804aa9a.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/game_pack/textures/player_run_strip.png"
+dest_files=["res://.godot/imported/player_run_strip.png-4aa3cd751b90da5029d83c722804aa9a.ctex"]
 
 [params]
 

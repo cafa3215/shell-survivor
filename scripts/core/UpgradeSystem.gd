@@ -13,6 +13,12 @@ var _pending_upgrades := 0
 var _pre_upgrade_hint_cd := 0.0
 var _build_tag_score: Dictionary = {}
 var _tag_cache: Dictionary = {}
+var _anchor_weapon_id := ""
+var _directed_picks_left := 0
+var _scrap_reroll_used := false
+var _scrap_ban_used := false
+var _current_option_ids: Array[String] = []
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -24,10 +30,22 @@ func _ready() -> void:
 	EventBus.request_upgrade.connect(_on_request_upgrade)
 	EventBus.upgrade_selected.connect(_on_upgrade_selected)
 
+
+func _process(_delta: float) -> void:
+	if _pending_upgrades > 0 and not _upgrade_open:
+		_try_open_upgrade_queue()
+
 func _on_request_upgrade() -> void:
 	_pending_upgrades += 1
 	_pre_upgrade_hint_cd = maxf(_pre_upgrade_hint_cd - 0.12, 0.0)
 	if _upgrade_open:
+		return
+	_try_open_upgrade_queue()
+
+
+func _try_open_upgrade_queue() -> void:
+	var g := get_parent()
+	if g != null and g.has_method("upgrade_panel_allowed") and not g.upgrade_panel_allowed():
 		return
 	_open_next_upgrade()
 
@@ -66,7 +84,83 @@ func _deferred_open_panel() -> void:
 		EventBus.game_resumed.emit()
 		return
 	var opts := _build_option_infos(_roll_three())
-	panel.open_with_options(opts)
+	_current_option_ids.clear()
+	for o in opts:
+		_current_option_ids.append(String(o.get("id", "")))
+	panel.open_with_options(opts, _service_state())
+
+
+func _service_state() -> Dictionary:
+	return {
+		"scrap": MetaProgress.scrap,
+		"reroll_cost": GameDB.RUN_SCRAP_REROLL_COST,
+		"ban_cost": GameDB.RUN_SCRAP_BAN_COST,
+		"reroll_used": _scrap_reroll_used,
+		"ban_used": _scrap_ban_used,
+	}
+
+
+func try_scrap_reroll() -> bool:
+	if not _upgrade_open or _scrap_reroll_used:
+		return false
+	if not MetaProgress.try_spend_scrap(GameDB.RUN_SCRAP_REROLL_COST):
+		NotificationSystem.notify_message("碎片不足，无法重抽。", 1.4, "warning")
+		return false
+	_scrap_reroll_used = true
+	_ensure_runtime_refs()
+	var opts := _build_option_infos(_roll_three())
+	_current_option_ids.clear()
+	for o in opts:
+		_current_option_ids.append(String(o.get("id", "")))
+	if panel:
+		panel.open_with_options(opts, _service_state())
+	NotificationSystem.notify_message("情报重抽成功。", 1.2, "item")
+	return true
+
+
+func try_scrap_ban_option(card_index: int) -> bool:
+	if not _upgrade_open or _scrap_ban_used:
+		return false
+	if card_index < 0 or card_index >= _current_option_ids.size():
+		return false
+	if not MetaProgress.try_spend_scrap(GameDB.RUN_SCRAP_BAN_COST):
+		NotificationSystem.notify_message("碎片不足，无法排除。", 1.4, "warning")
+		return false
+	_scrap_ban_used = true
+	var banned := _current_option_ids[card_index]
+	_ensure_runtime_refs()
+	var fresh := _roll_three()
+	# 尽量避开刚排除的选项
+	for i in fresh.size():
+		if String(fresh[i]) == banned:
+			var alt := _pick_replacement_option(banned, fresh)
+			if not alt.is_empty():
+				fresh[i] = alt
+			break
+	var opts := _build_option_infos(fresh)
+	_current_option_ids.clear()
+	for o in opts:
+		_current_option_ids.append(String(o.get("id", "")))
+	if panel:
+		panel.open_with_options(opts, _service_state())
+	NotificationSystem.notify_message("已排除陷阱选项并补进新情报。", 1.4, "success")
+	return true
+
+
+func _pick_replacement_option(banned: String, occupied: Array[String]) -> String:
+	var pool := _roll_three()
+	for cand in pool:
+		var c := String(cand)
+		if c == banned:
+			continue
+		if occupied.has(c):
+			continue
+		return c
+	for cand in pool:
+		var c2 := String(cand)
+		if c2 != banned:
+			return c2
+	return ""
 
 
 func _emit_pre_upgrade_context_hint() -> void:
@@ -102,7 +196,8 @@ func _run_phase_u() -> float:
 	var g := get_parent()
 	if g == null or not ("elapsed" in g):
 		return 0.0
-	return GameDB.run_progress_normalized(float(g.get("elapsed")))
+	var run_t := float(g.run_time_seconds) if "run_time_seconds" in g else float(GameDB.run_time_for_mode())
+	return GameDB.run_progress_normalized(float(g.get("elapsed")), run_t)
 
 
 func _roll_three() -> Array[String]:
@@ -191,6 +286,9 @@ func _roll_three() -> Array[String]:
 	var out: Array[String] = []
 	if _upgrades_since_fusion >= 5 and not fusion_candidates.is_empty():
 		out.append(fusion_candidates[randi() % fusion_candidates.size()])
+	if _directed_picks_left > 0 and not _anchor_weapon_id.is_empty():
+		_inject_directed_pick(out, weighted)
+		_directed_picks_left -= 1
 	while out.size() < 3 and not weighted.is_empty():
 		weighted.shuffle()
 		var pick: String = weighted[0]
@@ -226,116 +324,79 @@ func _build_option_infos(ids: Array[String]) -> Array[Dictionary]:
 		info["synergy_badge"] = _synergy_badge(String(info["synergy_label"]))
 		if sid.begins_with("f:"):
 			info["recommended"] = true
-			info["hint"] = "质变完成：立即显著提升清屏能力"
-			info["icon"] = "✶"
+			info["hint"] = ""
+			info["icon"] = "融"
 		elif sid.begins_with("w:"):
-			info["icon"] = "⚔"
+			info["icon"] = "武"
 			var wid := sid.trim_prefix("w:")
-			if int(weapon_system.level_map.get(wid, 0)) >= 4:
-				info["hint"] = "接近满级：更容易进入融合"
-			elif fusion_ready:
-				info["hint"] = "当前有融合可选：该项次优"
-			else:
+			if int(weapon_system.level_map.get(wid, 0)) >= GameDB.FUSION_WEAPON_LEVEL - 1:
+				info["hint"] = "可融合"
+			elif not fusion_ready:
 				info["recommended"] = true
-				info["hint"] = "扩充主动火力覆盖"
 		elif sid.begins_with("p:"):
-			info["icon"] = "◇"
-			var pid: String = sid.trim_prefix("p:")
-			info["hint"] = _passive_hint(pid)
+			info["icon"] = "被"
 		elif sid.begins_with("m:"):
 			var mid: String = sid.trim_prefix("m:")
 			if GameDB.MUTATIONS.has(mid):
-				info["icon"] = String(GameDB.MUTATIONS[mid].get("icon", "✦"))
-				info["hint"] = _mutation_hint(mid)
+				info["icon"] = String(GameDB.MUTATIONS[mid].get("icon", "变"))
 				if int(GameDB.MUTATIONS[mid].get("roll_weight", 3)) >= 4:
 					info["recommended"] = true
 		out.append(info)
 	return out
 
 
-func _mutation_hint(mid: String) -> String:
-	if not GameDB.MUTATIONS.has(mid):
-		return "永久叠加的构筑向强化"
-	var def: Dictionary = GameDB.MUTATIONS[mid]
-	var cur: int = int(skill_system.get_mutation_level(mid))
-	var next: int = mini(cur + 1, int(def["max_lv"]))
-	var sp: Dictionary = def.get("stats_per_lv", {}) as Dictionary
-	var parts: Array[String] = []
-	for sk in sp.keys():
-		var total: float = float(sp[sk]) * float(next)
-		parts.append(_mutation_stat_line(String(sk), total))
-	if parts.is_empty():
-		return String(def.get("desc", "变异效果"))
-	return "第%d层：%s" % [next, ", ".join(parts)]
-
-func _mutation_stat_line(stat_key: String, total: float) -> String:
-	match stat_key:
-		"atk_bonus":
-			return "伤害加成表 +%.0f%%" % (total * 100.0)
-		"move_bonus":
-			return "移速 +%.0f%%" % (total * 100.0)
-		"dr":
-			return "减伤 +%.0f%%" % (total * 100.0)
-		"lifesteal":
-			return "吸血 +%.0f%%" % (total * 100.0)
-		"xp_bonus":
-			return "经验 +%.0f%%" % (total * 100.0)
-		"fire_rate":
-			return "射速表 +%.0f%%" % (total * 100.0)
-		"crit_chance":
-			return "暴击率 +%.0f%%" % (total * 100.0)
-		"pickup_range":
-			return "拾取 +%.0fpx" % total
-		"hp_growth":
-			return "最大生命成长 +%.0f" % total
-		"shield_amount":
-			return "护盾上限 +%.0f" % total
-		_:
-			return "%s +%.3f" % [stat_key, total]
-
-
-func _passive_hint(pid: String) -> String:
-	match pid:
-		"xp_boost":
-			return "经验成长更快，缩短成型时间"
-		"atk_boost":
-			return "直接提升所有武器伤害"
-		"move_speed":
-			return "走位容错提升，规避弹幕更稳定"
-		"damage_reduction":
-			return "硬度提升，防止后期暴毙"
-		"lifesteal":
-			return "持续作战能力提升"
-		"fire_rate":
-			return "攻速/冷却收益显著"
-		"crit_chance":
-			return "暴击时伤害翻倍，爆发提升巨大"
-		"pickup_range":
-			return "经验球磁吸范围扩大，升级更快"
-		"hp_growth":
-			return "最大生命值提升，容错率增加"
-		# ========== 新增被动技能提示 ==========
-		"shield":
-			return "定期获得护盾吸收伤害，增强生存能力"
-		"freeze":
-			return "攻击附带减速效果，限制敌人移动"
-		"explosion_kill":
-			return "击杀敌人时造成范围爆炸，清场能力强"
-		"armor_break":
-			return "攻击降低敌人防御，提升整体输出"
-		_:
-			return "强化构筑协同"
-
 func _can_fuse(fid: String) -> bool:
 	var f: Dictionary = GameDB.FUSIONS[fid]
 	var wid := String(f["weapon"])
-	if int(weapon_system.level_map.get(wid, 0)) < 5:
+	if int(weapon_system.level_map.get(wid, 0)) < GameDB.FUSION_WEAPON_LEVEL:
 		return false
 	var req: Dictionary = f["requires"]
 	for pid in req.keys():
-		if int(skill_system.passive_levels.get(pid, 0)) < int(req[pid]):
+		var need := GameDB.fusion_required_passive_level(int(req[pid]))
+		if int(skill_system.passive_levels.get(pid, 0)) < need:
 			return false
 	return true
+
+
+func _inject_directed_pick(out: Array[String], weighted: Array[String]) -> void:
+	var primers: Array = GameDB.WEAPON_BUILD_PRIMERS.get(_anchor_weapon_id, [])
+	if primers.is_empty():
+		return
+	var pick := ""
+	for candidate in primers:
+		var cid := String(candidate)
+		if _is_upgrade_option_available(cid) and not out.has(cid):
+			pick = cid
+			break
+	if pick.is_empty():
+		for candidate in primers:
+			var cid := String(candidate)
+			if _is_upgrade_option_available(cid):
+				pick = cid
+				break
+	if pick.is_empty():
+		return
+	if out.has(pick):
+		return
+	if out.size() >= 3:
+		out[2] = pick
+	else:
+		out.append(pick)
+
+
+func _is_upgrade_option_available(option_id: String) -> bool:
+	_ensure_runtime_refs()
+	if weapon_system == null or skill_system == null:
+		return false
+	if option_id.begins_with("w:"):
+		var wid := option_id.trim_prefix("w:")
+		return GameDB.WEAPONS.has(wid) and int(weapon_system.level_map.get(wid, 0)) < 5
+	if option_id.begins_with("p:"):
+		var pid := option_id.trim_prefix("p:")
+		if not GameDB.PASSIVES.has(pid):
+			return false
+		return int(skill_system.passive_levels.get(pid, 0)) < int(GameDB.PASSIVES[pid]["max_lv"])
+	return false
 
 func _on_upgrade_selected(id: StringName) -> void:
 	_ensure_runtime_refs()
@@ -349,7 +410,11 @@ func _on_upgrade_selected(id: StringName) -> void:
 	var s := String(id)
 	RunStats.add_upgrade_pick(s)
 	if s.begins_with("w:"):
-		weapon_system.level_up_weapon(s.trim_prefix("w:"))
+		var wid := s.trim_prefix("w:")
+		weapon_system.level_up_weapon(wid)
+		if _anchor_weapon_id.is_empty():
+			_anchor_weapon_id = wid
+			_directed_picks_left = 2
 		_upgrades_since_fusion += 1
 	elif s.begins_with("p:"):
 		skill_system.level_up_passive(s.trim_prefix("p:"))
@@ -447,23 +512,23 @@ func _tag_to_cn(tag: String) -> String:
 func _synergy_badge(label: String) -> String:
 	match label:
 		"控制流":
-			return "🔵"
+			return "控"
 		"暴击流":
-			return "🔴"
+			return "暴"
 		"清场流":
-			return "🟠"
+			return "清"
 		"生存流":
-			return "🟢"
+			return "生"
 		"机动流":
-			return "🟣"
+			return "机"
 		"节奏流":
-			return "🟨"
+			return "节"
 		"输出流":
-			return "🟥"
+			return "攻"
 		"质变流":
-			return "✨"
+			return "变"
 		_:
-			return "⚪"
+			return "综"
 
 
 func _record_build_choice_tags(option_id: String) -> void:
@@ -510,15 +575,15 @@ func _infer_tags_from_text(src: String) -> Array[String]:
 		tags.append("crit")
 	if _has_any(s, ["fire rate", "attack speed", "射速", "攻速", "cooldown", "冷却"]):
 		tags.append("tempo")
-	if _has_any(s, ["explode", "explosion", "aoe", "范围", "爆炸", "清场"]):
+	if _has_any(s, ["explode", "explosion", "aoe", "范围", "爆炸", "清场", "燃爆", "蔓延", "灼烧"]):
 		tags.append("aoe")
-	if _has_any(s, ["freeze", "slow", "stun", "冰", "减速", "控制", "眩晕"]):
+	if _has_any(s, ["freeze", "slow", "stun", "冰", "减速", "控制", "眩晕", "冰域", "冻结"]):
 		tags.append("control")
 	if _has_any(s, ["lifesteal", "heal", "shield", "hp", "dr", "吸血", "护盾", "生命", "减伤"]):
 		tags.append("survival")
 	if _has_any(s, ["move", "dash", "speed", "移速", "冲刺", "机动"]):
 		tags.append("mobility")
-	if _has_any(s, ["atk", "attack", "damage", "armor break", "伤害", "攻击", "破甲", "输出"]):
+	if _has_any(s, ["atk", "attack", "damage", "armor break", "伤害", "攻击", "增伤", "锋刃", "输出", "穿透", "雷链", "环绕", "专精", "连锁"]):
 		tags.append("offense")
 	if tags.is_empty():
 		tags.append("generic")

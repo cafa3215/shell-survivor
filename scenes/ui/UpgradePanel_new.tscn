@@ -53,19 +53,19 @@ theme_override_constants/separation = 8
 
 [node name="TitleIcon" type="Label" parent="Background/Margin/VBox/TitleRow"]
 layout_mode = 2
-text = "⚡"
+text = "升"
 theme_type_variation = &"LabelMeta"
 
 [node name="Title" type="Label" parent="Background/Margin/VBox/TitleRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "变异 · 三选一"
+text = "升级"
 theme_type_variation = &"LabelTitle"
 horizontal_alignment = 1
 
 [node name="HintLabel" type="Label" parent="Background/Margin/VBox"]
 layout_mode = 2
-text = "武器模组 / 被动 / 融合 — 择一强化（细胞式构筑）"
+text = "武器 · 被动 · 融合"
 theme_type_variation = &"LabelBody"
 horizontal_alignment = 1
 autowrap_mode = 2
@@ -77,7 +77,7 @@ theme_override_constants/separation = 12
 alignment = 1
 
 [node name="Card1" type="Button" parent="Background/Margin/VBox/CardRow"]
-custom_minimum_size = Vector2(0, 148)
+custom_minimum_size = Vector2(0, 118)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.0
@@ -87,7 +87,7 @@ theme_type_variation = &"CardNormal"
 autowrap_mode = 2
 
 [node name="Card2" type="Button" parent="Background/Margin/VBox/CardRow"]
-custom_minimum_size = Vector2(0, 148)
+custom_minimum_size = Vector2(0, 118)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.0
@@ -97,7 +97,7 @@ theme_type_variation = &"CardNormal"
 autowrap_mode = 2
 
 [node name="Card3" type="Button" parent="Background/Margin/VBox/CardRow"]
-custom_minimum_size = Vector2(0, 148)
+custom_minimum_size = Vector2(0, 118)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.0
@@ -108,6 +108,6 @@ autowrap_mode = 2
 
 [node name="BottomHint" type="Label" parent="Background/Margin/VBox"]
 layout_mode = 2
-text = "按 1/2/3 或点击选择"
+text = "1 / 2 / 3 选择"
 theme_type_variation = &"LabelMeta"
 horizontal_alignment = 1

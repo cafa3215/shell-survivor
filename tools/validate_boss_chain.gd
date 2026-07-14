@@ -20,6 +20,13 @@ const REQUIRED_BOSS_METHODS: PackedStringArray = [
 	"boss_hp_ratio",
 	"boss_phase",
 	"boss_pos",
+	"boss_lightning_chain",
+	"boss_magma_barrage",
+	"boss_shadow_afterimage",
+	"boss_shadow_siphon",
+	"boss_shadow_collapse",
+	"boss_thunder_field",
+	"mark_mini_boss",
 ]
 
 const REQUIRED_EVENTBUS_SIGNALS: PackedStringArray = [
@@ -27,11 +34,15 @@ const REQUIRED_EVENTBUS_SIGNALS: PackedStringArray = [
 	"boss_telegraph",
 	"boss_defeated",
 	"boss_spawned",
+	"mini_boss_defeated",
 ]
 
 const REQUIRED_GAME_SCRIPT_TOKENS: PackedStringArray = [
 	"EventBus.boss_defeated.connect",
 	"$EnemyManager.spawn_boss",
+	"_start_extraction_sequence",
+	"_tick_extraction",
+	"on_mini_boss_killed",
 	"$EnemyManager.boss_alive()",
 	"$HUD.set_boss_info(",
 ]

@@ -1,0 +1,20 @@
+{
+	"cmsNote": "导入种子；日常元数据以作品集 CMS /admin 为准",
+	"slug": "game",
+	"title": "肉鸽",
+	"desc": "俯视角生存射击。11 种武器、融合进化、BOSS 战，支持手机横屏。",
+	"tag": "游戏",
+	"color": "#0d9488",
+	"tint": "#f0fdfa",
+	"icon": "◎",
+	"year": "2025",
+	"featured": true,
+	"enabled": true,
+	"status": "live",
+	"order": 2,
+	"deployUrl": "https://shell-survivor.vercel.app",
+	"deployPath": "game",
+	"buildOutput": "build/web/game",
+	"healthUrl": "/game/releases/latest.json",
+	"version": "2.3.0"
+}

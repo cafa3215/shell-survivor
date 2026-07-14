@@ -10,6 +10,7 @@ class_name HUD
 @onready var enemy_label: Label = $Root/TopBar/VBox/Row3/EnemyLabel
 @onready var xp_label: Label = $Root/TopBar/VBox/Row3/XpLabel
 @onready var joy_root: Control = $Root/JoystickRoot
+@onready var joy_base: Panel = $Root/JoystickRoot/Base
 @onready var joy_knob: Panel = $Root/JoystickRoot/Knob
 @onready var aim_zone: Control = $Root/AimZone
 @onready var boss_warn: Panel = $Root/BossWarn
@@ -21,8 +22,9 @@ class_name HUD
 @onready var extraction_alert: PanelContainer = $Root/ExtractionAlert
 @onready var extraction_label: Label = $Root/ExtractionAlert/Label
 @onready var active_skill_panel: PanelContainer = $Root/ActiveSkillPanel
-@onready var active_skill_cd: ProgressBar = $Root/ActiveSkillPanel/VBox/CooldownBar
-@onready var active_skill_hint: Label = $Root/ActiveSkillPanel/VBox/HintLabel
+@onready var active_skill_cd: ProgressBar = $Root/ActiveSkillPanel/HBox/CooldownBar
+@onready var active_skill_key: Label = $Root/ActiveSkillPanel/HBox/KeyLabel
+@onready var active_skill_btn: Button = $Root/ActiveSkillButton
 @onready var boss_container: PanelContainer = $Root/BossContainer
 @onready var boss_label: Label = $Root/BossContainer/VBox/BossTitle/BossLabel
 @onready var boss_phase: Label = $Root/BossContainer/VBox/BossTitle/BossPhase
@@ -43,11 +45,17 @@ var _hp_flash := 0.0
 
 var _touch_id := -1
 var _aim_touch_id := -1
+const _MOUSE_JOY_ID := -42
+const _JOY_BASE_DIAMETER := 136.0
+const _JOY_KNOB_DIAMETER := 52.0
+const _JOY_MARGIN_LEFT := 8.0
+const _JOY_MARGIN_BOTTOM := 6.0
+const _JOY_TOUCH_PAD := 22.0
 var _joy_radius := 68.0
-const _JOY_DEADZONE_RATIO := 0.18
+const _JOY_DEADZONE_RATIO := 0.10
 var _aim_vec := Vector2.ZERO
-var _aim_deadzone := 0.16
-var _aim_snap_strength := 0.35
+var _aim_deadzone := 0.12
+var _aim_snap_strength := 0.62
 var _aim_release_damp := 0.85
 var _director_mul := 1.0
 var _xp_mul := 1.0
@@ -60,6 +68,8 @@ var _equip_panel_open := false
 var _hud_perf_tick := 0
 var _vfx_profile_tip: Label = null
 var _vfx_tip_tween: Tween = null
+var _portrait_blocker: ColorRect = null
+var _portrait_blocker_label: Label = null
 var _damage_toggle_btn: Button = null
 var _damage_panel: PanelContainer = null
 var _damage_body: VBoxContainer = null
@@ -124,11 +134,32 @@ var _weapon_carrier_panel: PanelContainer = null
 var _weapon_carrier_grid: GridContainer = null
 var _weapon_card_items: Array[Dictionary] = []
 var _weapon_card_fx_t := 0.0
+var _combat_weapon_strip: HBoxContainer = null
+var _combat_weapon_chip_cache: Dictionary = {}
+var _combat_weapon_tick := 0
+var _build_stamp_label: Label = null
 var _goal_label: Label = null
+var _joy_layout_size := Vector2.ZERO
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		call_deferred("_sync_move_joystick_zone")
+
 
 func _process(delta: float) -> void:
+	if InputManager.is_touch_ui() and joy_root:
+		var sz := get_viewport().get_visible_rect().size
+		if sz != _joy_layout_size:
+			_joy_layout_size = sz
+			_sync_move_joystick_zone()
+	if _portrait_blocker != null and InputManager.is_touch_ui():
+		_update_portrait_blocker()
 	_update_damage_panel(delta)
 	_update_weapon_carrier_fx(delta)
+	if Settings.debug_hud:
+		_combat_weapon_tick += 1
+		if _combat_weapon_tick % 12 == 0:
+			_refresh_combat_weapon_strip()
 	_hud_perf_tick += 1
 	_relic_hud_tick += 1
 	if _relic_hud_tick % 8 == 0:
@@ -240,6 +271,16 @@ func set_xp(current_xp: int, needed: int, gated: bool = false) -> void:
 				fill.value = ratio * 100.0
 
 
+func enter_module_demo_overlay() -> void:
+	# 模块演示场景（白盒等）自带顶部操作面板，收起 HUD 中与其重叠的面板
+	set_run_goal("")
+	if _damage_panel_expanded:
+		_toggle_damage_panel()
+	if _weapon_carrier_panel:
+		_weapon_carrier_panel.visible = false
+	_equip_panel_open = false
+
+
 func set_run_goal(text: String) -> void:
 	_ensure_goal_label()
 	if _goal_label == null:
@@ -267,8 +308,9 @@ func set_endless(endless: bool) -> void:
 	if endless_badge:
 		endless_badge.visible = endless
 
-## 撤离前警报：remaining_sec 为剩余秒数（1–60）；≤0 或 >60 时隐藏
-func set_extraction_countdown(remaining_sec: int) -> void:
+## 时限/撤离警报：remaining_sec 为剩余秒数；≤0 或超出窗口时隐藏
+## kind: "deadline"=任务时限（未击破首领将失败）；"extract"=首领死后撤离窗
+func set_extraction_countdown(remaining_sec: int, kind: String = "extract") -> void:
 	if extraction_alert == null or extraction_label == null:
 		return
 	if remaining_sec <= 0 or remaining_sec > GameDB.EXTRACTION_ALERT_BEFORE_SEC:
@@ -278,7 +320,10 @@ func set_extraction_countdown(remaining_sec: int) -> void:
 	extraction_alert.visible = true
 	var m: int = remaining_sec / 60
 	var s: int = remaining_sec % 60
-	extraction_label.text = "撤离信号  %02d:%02d" % [m, s]
+	if kind == "deadline":
+		extraction_label.text = "任务时限  %02d:%02d" % [m, s]
+	else:
+		extraction_label.text = "撤离倒计时  %02d:%02d" % [m, s]
 	_apply_time_state(true)
 
 
@@ -344,8 +389,14 @@ func _ready() -> void:
 	EventBus.player_damaged.connect(_on_player_damaged)
 	EventBus.vfx_profile_changed.connect(_show_vfx_profile_tip)
 	EventBus.extreme_perf_guard_changed.connect(_show_extreme_perf_guard_tip)
+	var root := get_node_or_null("Root") as Control
+	if root:
+		# 全屏 Root 默认会拦截鼠标，导致模块演示层（白盒等）按钮无法点击
+		root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if joy_root:
+		joy_root.mouse_filter = Control.MOUSE_FILTER_STOP
 		joy_root.resized.connect(_sync_move_joystick_zone)
+		call_deferred("_apply_joystick_visuals")
 	var vp := get_viewport()
 	if vp:
 		if not vp.size_changed.is_connected(_sync_move_joystick_zone):
@@ -355,6 +406,11 @@ func _ready() -> void:
 	call_deferred("_sync_move_joystick_zone")
 	call_deferred("_apply_safe_area_margins")
 	call_deferred("_apply_compact_hud_layout")
+	if InputManager.is_touch_ui():
+		var tree := get_tree()
+		if tree:
+			tree.create_timer(0.35).timeout.connect(_sync_move_joystick_zone)
+			tree.create_timer(1.0).timeout.connect(_sync_move_joystick_zone)
 	if fps_label:
 		fps_label.theme_type_variation = &"Label.Meta"
 		fps_label.visible = false
@@ -364,11 +420,13 @@ func _ready() -> void:
 	if equip_btn:
 		equip_btn.pressed.connect(_toggle_equip_panel)
 	if dash_btn:
-		dash_btn.pressed.connect(func() -> void:
+		InputManager.bind_instant_tap(dash_btn, func() -> void:
+			_show_touch_action("冲刺")
 			EventBus.dash_requested.emit()
 		)
 	if pause_btn:
-		pause_btn.pressed.connect(func() -> void:
+		InputManager.bind_instant_tap(pause_btn, func() -> void:
+			_show_touch_action("暂停")
 			EventBus.toggle_pause_requested.emit()
 		)
 	_setup_vfx_profile_tip()
@@ -380,8 +438,99 @@ func _ready() -> void:
 	if asm and asm.has_signal("cooldown_visual_changed") and not asm.cooldown_visual_changed.is_connected(_on_active_skill_hud):
 		asm.cooldown_visual_changed.connect(_on_active_skill_hud)
 	if active_skill_panel:
-		active_skill_panel.tooltip_text = "按住 R 或鼠标右键：发射穿透激光，松手后冷却 4 秒"
+		active_skill_panel.tooltip_text = "R / 右键：穿透激光，松手冷却 4 秒"
+	if active_skill_key:
+		active_skill_key.tooltip_text = active_skill_panel.tooltip_text if active_skill_panel else ""
+	_setup_active_skill_touch()
 	call_deferred("_refresh_relic_hud_line")
+	call_deferred("_ensure_portrait_blocker")
+
+
+func _ensure_portrait_blocker() -> void:
+	if OS.has_feature("web"):
+		return
+	if not InputManager.is_touch_ui() or _portrait_blocker != null:
+		return
+	_portrait_blocker = ColorRect.new()
+	_portrait_blocker.name = "PortraitBlocker"
+	_portrait_blocker.color = Color(0.02, 0.05, 0.1, 0.92)
+	_portrait_blocker.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_portrait_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	_portrait_blocker.visible = false
+	_portrait_blocker_label = Label.new()
+	_portrait_blocker_label.text = "请旋转手机至横屏\n竖屏无法使用摇杆"
+	_portrait_blocker_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_portrait_blocker_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_portrait_blocker_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_portrait_blocker_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_portrait_blocker_label.theme_type_variation = &"LabelTitle"
+	_portrait_blocker.add_child(_portrait_blocker_label)
+	add_child(_portrait_blocker)
+	_update_portrait_blocker()
+
+
+func _is_portrait_viewport() -> bool:
+	if OS.has_feature("web"):
+		var screen_id := DisplayServer.window_get_current_screen()
+		var screen_size := DisplayServer.screen_get_size(screen_id)
+		if screen_size.x > screen_size.y * 1.02:
+			return false
+	var sz := get_viewport().get_visible_rect().size
+	if sz.x > sz.y * 1.08:
+		return false
+	return sz.y > sz.x * 1.02
+
+
+func _update_portrait_blocker() -> void:
+	if _portrait_blocker == null:
+		return
+	var block := InputManager.is_touch_ui() and _is_portrait_viewport()
+	_portrait_blocker.visible = block
+	if block:
+		InputManager.reset_joystick()
+		InputManager.reset_aim()
+
+
+func _setup_active_skill_touch() -> void:
+	if active_skill_btn:
+		active_skill_btn.tooltip_text = "按住发射激光，松手后冷却 4 秒"
+		InputManager.bind_instant_hold(active_skill_btn, _on_active_skill_btn_down, _on_active_skill_btn_up)
+	if active_skill_panel and not active_skill_panel.gui_input.is_connected(_on_active_skill_panel_input):
+		active_skill_panel.gui_input.connect(_on_active_skill_panel_input)
+
+
+func _active_skill_manager() -> Node:
+	return get_node_or_null("/root/ActiveSkillManager")
+
+
+func _on_active_skill_btn_down() -> void:
+	_show_touch_action("激光")
+	var asm := _active_skill_manager()
+	if asm and asm.has_method("set_touch_hold"):
+		asm.call("set_touch_hold", true)
+
+
+func _on_active_skill_btn_up() -> void:
+	var asm := _active_skill_manager()
+	if asm and asm.has_method("set_touch_hold"):
+		asm.call("set_touch_hold", false)
+
+
+func _on_active_skill_panel_input(event: InputEvent) -> void:
+	if not InputManager.is_touch_ui():
+		return
+	var asm := _active_skill_manager()
+	if asm == null or not asm.has_method("set_touch_hold"):
+		return
+	if event is InputEventScreenTouch:
+		var e := event as InputEventScreenTouch
+		asm.call("set_touch_hold", e.pressed)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			asm.call("set_touch_hold", mb.pressed)
+			get_viewport().set_input_as_handled()
 
 
 func _on_active_skill_hud(remaining_sec: float, total_sec: float, aiming: bool) -> void:
@@ -391,21 +540,45 @@ func _on_active_skill_hud(remaining_sec: float, total_sec: float, aiming: bool) 
 		var t := maxf(0.001, total_sec)
 		var ready_ratio := 1.0 - clampf(remaining_sec / t, 0.0, 1.0)
 		active_skill_cd.value = ready_ratio * 100.0
-	if active_skill_hint:
+	if active_skill_key:
 		if not bound:
-			active_skill_hint.text = "技能未就绪"
+			active_skill_key.text = "—"
+			active_skill_key.modulate = Color(0.55, 0.58, 0.62, 0.9)
 		elif remaining_sec > 0.05:
-			active_skill_hint.text = "冷却 %.1f秒" % remaining_sec
+			active_skill_key.text = "R"
+			active_skill_key.modulate = Color(0.72, 0.76, 0.82, 0.95)
 		elif aiming:
-			active_skill_hint.text = "激光照射中"
+			active_skill_key.text = "R"
+			active_skill_key.modulate = Color(0.55, 1.0, 1.0, 1.0)
 		else:
-			active_skill_hint.text = "按住 R / 右键"
+			active_skill_key.text = "R"
+			active_skill_key.modulate = Color.WHITE
 	if active_skill_panel:
-		active_skill_panel.visible = true
+		active_skill_panel.visible = bound and not InputManager.is_touch_ui()
+		var tip := "R / 右键：穿透激光，松手冷却 4 秒"
+		if not bound:
+			tip = "技能未就绪"
+		elif remaining_sec > 0.05:
+			tip = "冷却 %.1f 秒" % remaining_sec
+		elif aiming:
+			tip = "激光照射中"
+		active_skill_panel.tooltip_text = tip
 		if aiming and active_skill_cd:
 			active_skill_cd.modulate = Color(0.75, 1.0, 1.0, 1.0)
 		elif active_skill_cd:
-			active_skill_cd.modulate = Color.WHITE
+			active_skill_cd.modulate = Color.WHITE if bound else Color(0.65, 0.68, 0.72, 0.85)
+	if active_skill_btn:
+		active_skill_btn.visible = bound and InputManager.is_touch_ui()
+		active_skill_btn.disabled = not bound or remaining_sec > 0.05
+		if active_skill_btn.has_meta(&"tap_holding"):
+			active_skill_btn.modulate = Color(0.42, 1.0, 1.18, 1.0)
+			active_skill_btn.scale = Vector2(0.9, 0.9)
+		elif aiming:
+			active_skill_btn.modulate = Color(0.7, 1.0, 1.0, 1.0)
+		elif remaining_sec > 0.05:
+			active_skill_btn.modulate = Color(0.72, 0.76, 0.82, 0.95)
+		else:
+			active_skill_btn.modulate = Color.WHITE
 
 func _setup_vfx_profile_tip() -> void:
 	var root := get_node_or_null("Root") as Control
@@ -452,6 +625,19 @@ func _show_hud_tip(text: String) -> void:
 			_vfx_profile_tip.visible = false
 	)
 
+
+func _show_touch_action(text: String) -> void:
+	if not InputManager.is_touch_ui() or _vfx_profile_tip == null:
+		return
+	_vfx_profile_tip.theme_type_variation = &"LabelTitle"
+	_vfx_profile_tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vfx_profile_tip.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_vfx_profile_tip.offset_left = -180.0
+	_vfx_profile_tip.offset_right = 180.0
+	_vfx_profile_tip.offset_bottom = -120.0
+	_vfx_profile_tip.offset_top = -72.0
+	_show_hud_tip(text)
+
 func _apply_compact_hud_layout() -> void:
 	var root := get_node_or_null("Root") as Control
 	var tb := get_node_or_null("Root/TopBar") as PanelContainer
@@ -490,6 +676,8 @@ func _apply_compact_hud_layout() -> void:
 		perf_label.offset_bottom = -6.0
 		perf_label.add_theme_font_size_override("font_size", 11)
 		perf_label.visible = false
+	if InputManager.is_touch_ui():
+		call_deferred("_sync_move_joystick_zone")
 
 
 func _apply_safe_area_margins() -> void:
@@ -507,36 +695,176 @@ func _sync_move_joystick_zone() -> void:
 	if joy_root == null:
 		return
 	var vp := get_viewport()
-	if vp:
-		var screen_size := vp.get_visible_rect().size
-		if InputManager.is_mobile() or DisplayServer.is_touchscreen_available():
-			var joy_w := screen_size.x * 0.4
-			var joy_h := screen_size.y * 0.4
-			joy_root.offset_left = 16.0
-			joy_root.offset_top = screen_size.y - joy_h - 16.0
-			joy_root.offset_right = 16.0 + joy_w
-			joy_root.offset_bottom = screen_size.y - 16.0
-			if aim_zone:
-				aim_zone.offset_left = screen_size.x * 0.55
-				aim_zone.offset_top = screen_size.y * 0.5
-				aim_zone.offset_right = screen_size.x - 16.0
-				aim_zone.offset_bottom = screen_size.y - 16.0
-	InputManager.configure_move_joystick(joy_root.get_global_rect(), _joy_radius)
-	var show_joy := InputManager.is_mobile() or DisplayServer.is_touchscreen_available()
+	var screen_size := vp.get_visible_rect().size if vp else Vector2.ZERO
+	if vp and InputManager.is_touch_ui():
+		var center := _joystick_layout_center(screen_size)
+		var zone_half := _joy_radius + _JOY_TOUCH_PAD
+		var zone := zone_half * 2.0
+		joy_root.layout_mode = 0
+		joy_root.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		joy_root.position = Vector2(
+			maxf(0.0, center.x - zone_half),
+			maxf(0.0, center.y - zone_half)
+		)
+		joy_root.size = Vector2(zone, zone)
+		if aim_zone:
+			aim_zone.offset_left = screen_size.x * 0.55
+			aim_zone.offset_top = screen_size.y * 0.5
+			aim_zone.offset_right = screen_size.x - 16.0
+			aim_zone.offset_bottom = screen_size.y - 16.0
+	var joy_rect := _joystick_touch_rect(screen_size)
+	if joy_rect.size != Vector2.ZERO:
+		InputManager.configure_move_joystick(joy_rect, _joy_radius)
+	elif joy_root:
+		InputManager.configure_move_joystick(joy_root.get_global_rect(), _joy_radius)
+	var show_joy := InputManager.is_touch_ui()
 	joy_root.visible = show_joy
 	if aim_zone:
 		aim_zone.visible = show_joy
 	if show_joy:
+		_apply_joystick_visuals()
 		_refresh_joystick_knob()
 	_update_mobile_action_buttons()
 
+
+func _joystick_layout_center(screen_size: Vector2) -> Vector2:
+	return Vector2(
+		_JOY_MARGIN_LEFT + _joy_radius,
+		screen_size.y - _JOY_MARGIN_BOTTOM - _joy_radius
+	)
+
+
+func _joystick_touch_rect(screen_size: Vector2) -> Rect2:
+	if screen_size == Vector2.ZERO:
+		return Rect2()
+	var center := _joystick_layout_center(screen_size)
+	var zone_half := _joy_radius + _JOY_TOUCH_PAD
+	return Rect2(center - Vector2(zone_half, zone_half), Vector2(zone_half * 2.0, zone_half * 2.0))
+
+
+func _apply_joystick_visuals() -> void:
+	if joy_base == null or joy_knob == null:
+		return
+	if joy_root:
+		joy_root.theme_type_variation = &""
+	var base_r := _JOY_BASE_DIAMETER * 0.5
+	var knob_r := _JOY_KNOB_DIAMETER * 0.5
+	for panel in [joy_base, joy_knob]:
+		panel.theme_type_variation = &""
+	joy_base.set_anchors_preset(Control.PRESET_CENTER)
+	joy_base.offset_left = -base_r
+	joy_base.offset_top = -base_r
+	joy_base.offset_right = base_r
+	joy_base.offset_bottom = base_r
+	joy_knob.set_anchors_preset(Control.PRESET_CENTER)
+	joy_knob.offset_left = -knob_r
+	joy_knob.offset_top = -knob_r
+	joy_knob.offset_right = knob_r
+	joy_knob.offset_bottom = knob_r
+	joy_base.add_theme_stylebox_override(
+		&"panel",
+		_circle_stylebox(Color(0.08, 0.14, 0.24, 0.72), base_r, Color(0.42, 0.72, 1.0, 0.42), 2)
+	)
+	joy_knob.add_theme_stylebox_override(
+		&"panel",
+		_circle_stylebox(Color(0.22, 0.58, 0.92, 0.95), knob_r, Color(0.72, 0.92, 1.0, 0.85), 2)
+	)
+
+
+func _circle_stylebox(
+	bg: Color,
+	radius: float,
+	border: Color = Color(0.5, 0.75, 1.0, 0.35),
+	border_width: int = 2
+) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.border_width_left = border_width
+	sb.border_width_top = border_width
+	sb.border_width_right = border_width
+	sb.border_width_bottom = border_width
+	var r := int(round(radius))
+	sb.corner_radius_top_left = r
+	sb.corner_radius_top_right = r
+	sb.corner_radius_bottom_right = r
+	sb.corner_radius_bottom_left = r
+	sb.anti_aliasing = true
+	return sb
+
 func _update_mobile_action_buttons() -> void:
-	var touch_ui := InputManager.is_mobile() or DisplayServer.is_touchscreen_available()
+	var touch_ui := InputManager.is_touch_ui()
 	if dash_btn:
 		dash_btn.visible = touch_ui
 	if pause_btn:
 		pause_btn.visible = touch_ui
 	_layout_top_right_actions()
+
+func _input(event: InputEvent) -> void:
+	if not InputManager.is_touch_ui() or joy_root == null or not joy_root.visible:
+		return
+	if event is InputEventScreenTouch:
+		var e := event as InputEventScreenTouch
+		if e.pressed and _touch_id == -1 and _joystick_zone_hit(e.position):
+			_begin_joystick(e.index, e.position)
+			get_viewport().set_input_as_handled()
+		elif (not e.pressed) and e.index == _touch_id:
+			_end_joystick()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag:
+		var d := event as InputEventScreenDrag
+		if d.index == _touch_id:
+			_update_joystick(d.position)
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed and _touch_id == -1 and _joystick_zone_hit(mb.global_position):
+			_begin_joystick(_MOUSE_JOY_ID, mb.global_position)
+			get_viewport().set_input_as_handled()
+		elif (not mb.pressed) and _touch_id == _MOUSE_JOY_ID:
+			_end_joystick()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		if _touch_id == _MOUSE_JOY_ID and (mm.button_mask & MOUSE_BUTTON_MASK_LEFT):
+			_update_joystick(mm.global_position)
+			get_viewport().set_input_as_handled()
+
+
+func _joystick_zone_hit(screen_pos: Vector2) -> bool:
+	var center := _joystick_center_screen()
+	if center == Vector2.ZERO:
+		return false
+	return screen_pos.distance_to(center) <= _joy_radius + _JOY_TOUCH_PAD
+
+
+func _joystick_center_screen() -> Vector2:
+	if joy_base and joy_base.is_inside_tree():
+		return joy_base.get_global_rect().get_center()
+	if joy_root and joy_root.is_inside_tree():
+		var vp := get_viewport()
+		if vp and InputManager.is_touch_ui():
+			return _joystick_layout_center(vp.get_visible_rect().size)
+		return joy_root.get_global_rect().get_center()
+	return Vector2.ZERO
+
+
+func _begin_joystick(id: int, screen_pos: Vector2) -> void:
+	_touch_id = id
+	_flash_joystick_touch(true)
+	InputManager.move_joystick_touch_begin(screen_pos)
+	InputManager.move_joystick_touch_drag(screen_pos, _JOY_DEADZONE_RATIO)
+	_refresh_joystick_knob()
+
+
+func _end_joystick() -> void:
+	_touch_id = -1
+	_flash_joystick_touch(false)
+	InputManager.move_joystick_touch_end()
+	_refresh_joystick_knob()
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey:
@@ -565,29 +893,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		var e := event as InputEventScreenTouch
-		if e.pressed and _touch_id == -1 and joy_root.get_global_rect().has_point(e.position):
-			_touch_id = e.index
-			InputManager.move_joystick_touch_begin(e.position)
-			InputManager.move_joystick_touch_drag(e.position, _JOY_DEADZONE_RATIO)
-			_refresh_joystick_knob()
-			get_viewport().set_input_as_handled()
-		elif e.pressed and _aim_touch_id == -1 and aim_zone.get_global_rect().has_point(e.position):
+		if e.pressed and _aim_touch_id == -1 and aim_zone.get_global_rect().has_point(e.position):
 			_aim_touch_id = e.index
 			_update_aim(e.position - aim_zone.get_global_rect().get_center(), true)
-		elif (not e.pressed) and e.index == _touch_id:
-			_touch_id = -1
-			InputManager.move_joystick_touch_end()
-			_refresh_joystick_knob()
-			get_viewport().set_input_as_handled()
 		elif (not e.pressed) and e.index == _aim_touch_id:
 			_aim_touch_id = -1
 			_update_aim(Vector2.ZERO, false)
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
-		if d.index == _touch_id:
-			_update_joystick(d.position)
-			get_viewport().set_input_as_handled()
-		elif d.index == _aim_touch_id:
+		if d.index == _aim_touch_id:
 			_update_aim(d.position - aim_zone.get_global_rect().get_center(), true)
 
 func _update_joystick(screen_pos: Vector2) -> void:
@@ -605,6 +919,21 @@ func _refresh_joystick_knob() -> void:
 		half += base_screen - local_base
 	var off := InputManager.get_joystick_knob_offset_pixels(_joy_radius)
 	joy_knob.position = half + off - joy_knob.size * 0.5
+
+
+func _flash_joystick_touch(active: bool) -> void:
+	if joy_knob == null:
+		return
+	if active:
+		joy_knob.modulate = Color(0.55, 1.0, 1.2, 1.0)
+		joy_knob.scale = Vector2(1.08, 1.08)
+		if joy_base:
+			joy_base.modulate = Color(0.92, 1.0, 1.08, 1.0)
+	elif joy_root:
+		joy_knob.modulate = Color.WHITE
+		joy_knob.scale = Vector2.ONE
+		if joy_base:
+			joy_base.modulate = Color.WHITE
 
 func _update_aim(v: Vector2, active: bool) -> void:
 	var out := v
@@ -662,7 +991,7 @@ func _setup_damage_panel() -> void:
 		return
 	_damage_toggle_btn = Button.new()
 	_damage_toggle_btn.name = "DamageStatToggle"
-	_damage_toggle_btn.text = "伤害统计 ▼"
+	_damage_toggle_btn.text = "伤害统计 展开"
 	_damage_toggle_btn.theme_type_variation = &"ButtonSecondary"
 	_damage_toggle_btn.pressed.connect(_toggle_damage_panel)
 	root.add_child(_damage_toggle_btn)
@@ -857,7 +1186,7 @@ func _toggle_damage_panel() -> void:
 	if _damage_panel:
 		_damage_panel.visible = _damage_panel_expanded
 	if _damage_toggle_btn:
-		_damage_toggle_btn.text = "伤害统计 ▼" if _damage_panel_expanded else "伤害统计 ▶"
+		_damage_toggle_btn.text = "伤害统计 展开" if _damage_panel_expanded else "伤害统计 收起"
 	if _damage_panel_expanded:
 		_refresh_damage_panel(true)
 		_damage_trend_samples.clear()
@@ -1577,6 +1906,129 @@ func _setup_weapon_carrier_panel() -> void:
 	grid_wrap.add_child(_weapon_carrier_grid)
 
 
+func _setup_combat_weapon_strip() -> void:
+	# 仅 debug 模式：战斗 HUD 保持原布局（暂停/冲刺/伤害统计/装备/激光），不在屏上叠武器条。
+	if not Settings.debug_hud:
+		return
+	if _combat_weapon_strip != null:
+		return
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		push_warning("HUD: Root Control 缺失，跳过 debug 武器条")
+		return
+	_combat_weapon_strip = HBoxContainer.new()
+	_combat_weapon_strip.name = "CombatWeaponStrip"
+	_combat_weapon_strip.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_combat_weapon_strip.offset_top = 88.0
+	_combat_weapon_strip.offset_bottom = 128.0
+	_combat_weapon_strip.offset_left = -220.0
+	_combat_weapon_strip.offset_right = 220.0
+	_combat_weapon_strip.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_combat_weapon_strip.alignment = BoxContainer.ALIGNMENT_CENTER
+	_combat_weapon_strip.add_theme_constant_override("separation", 6)
+	_combat_weapon_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combat_weapon_strip.z_index = 4
+	_combat_weapon_strip.visible = false
+	root.add_child(_combat_weapon_strip)
+	_ensure_build_stamp_label(root)
+
+
+func _ensure_build_stamp_label(root: Control) -> void:
+	if not Settings.debug_hud:
+		return
+	if _build_stamp_label != null and is_instance_valid(_build_stamp_label):
+		return
+	_build_stamp_label = Label.new()
+	_build_stamp_label.name = "BuildStampLabel"
+	_build_stamp_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_build_stamp_label.offset_left = 8.0
+	_build_stamp_label.offset_top = -22.0
+	_build_stamp_label.offset_bottom = -6.0
+	_build_stamp_label.offset_right = 200.0
+	_build_stamp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_build_stamp_label.add_theme_font_size_override("font_size", 11)
+	_build_stamp_label.add_theme_color_override("font_color", Color(0.55, 0.72, 0.95, 0.72))
+	_build_stamp_label.text = "build %s" % String(GameDB.WEB_BUILD_STAMP)
+	root.add_child(_build_stamp_label)
+
+
+func _refresh_combat_weapon_strip() -> void:
+	if _combat_weapon_strip == null:
+		return
+	var info := get_equipment_info()
+	var weapons: Dictionary = info.get("weapons", {})
+	var active_ids: Array[String] = []
+	for wid in weapons.keys():
+		if int(weapons[wid].get("level", 0)) > 0:
+			active_ids.append(String(wid))
+	active_ids.sort()
+	for k in _combat_weapon_chip_cache.keys():
+		if not active_ids.has(String(k)):
+			var old: Control = _combat_weapon_chip_cache[k]
+			if is_instance_valid(old):
+				old.queue_free()
+			_combat_weapon_chip_cache.erase(k)
+	for wid in active_ids:
+		if not _combat_weapon_chip_cache.has(wid):
+			_combat_weapon_chip_cache[wid] = _build_combat_weapon_chip(wid, int(weapons[wid].get("level", 1)))
+			_combat_weapon_strip.add_child(_combat_weapon_chip_cache[wid])
+		var chip: PanelContainer = _combat_weapon_chip_cache[wid] as PanelContainer
+		if chip:
+			var lv_lbl := chip.get_node_or_null("Margin/VBox/Lv") as Label
+			if lv_lbl:
+				lv_lbl.text = "Lv.%d" % int(weapons[wid].get("level", 1))
+	var order := 0
+	for wid in active_ids:
+		var chip2: Control = _combat_weapon_chip_cache[wid]
+		if chip2:
+			_combat_weapon_strip.move_child(chip2, order)
+			order += 1
+
+
+func _build_combat_weapon_chip(wid: String, _lv: int) -> PanelContainer:
+	var chip := PanelContainer.new()
+	chip.name = "Chip_%s" % wid
+	chip.custom_minimum_size = Vector2(52, 40)
+	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pri := WeaponVisualRegistry.primary(wid)
+	var sec := WeaponVisualRegistry.secondary(wid)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(sec.r, sec.g, sec.b, 0.72)
+	sb.border_color = Color(pri.r, pri.g, pri.b, 0.92)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 4
+	sb.content_margin_right = 4
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	chip.add_theme_stylebox_override("panel", sb)
+	var margin := MarginContainer.new()
+	margin.name = "Margin"
+	chip.add_child(margin)
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.add_theme_constant_override("separation", 0)
+	margin.add_child(vbox)
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.custom_minimum_size = Vector2(28, 28)
+	icon.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var card_path := "res://assets/game_pack/textures/weapon_cards/%s_card.png" % wid
+	if ResourceLoader.exists(card_path):
+		icon.texture = load(card_path)
+	vbox.add_child(icon)
+	var lv := Label.new()
+	lv.name = "Lv"
+	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lv.add_theme_font_size_override("font_size", 10)
+	lv.add_theme_color_override("font_color", Color(pri.r, pri.g, pri.b, 0.95))
+	lv.text = "Lv.%d" % _lv
+	vbox.add_child(lv)
+	chip.tooltip_text = String(GameDB.WEAPONS.get(wid, {}).get("name", wid))
+	return chip
+
+
 func _load_weapon_carrier_defs() -> void:
 	_weapon_carrier_defs.clear()
 	if not FileAccess.file_exists(_WEAPON_CARRIER_CONFIG_PATH):
@@ -1663,7 +2115,7 @@ func _build_weapon_card(weapon_id: String, card_def: Dictionary, lv: int) -> Pan
 
 	var status_lbl := Label.new()
 	var lv_text := ("Lv.%d" % lv) if lv > 0 else "未装备"
-	status_lbl.text = lv_text + ("  ◇EX" if ex_ready else "")
+	status_lbl.text = lv_text + ("  EX" if ex_ready else "")
 	status_lbl.theme_type_variation = &"Label.Meta"
 	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	title_row.add_child(status_lbl)

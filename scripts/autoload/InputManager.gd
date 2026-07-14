@@ -13,6 +13,8 @@ static var touch_strength: float = 0.0
 static var touch_radius: float = 70.0
 static var touch_smoothing: float = 0.22 # 0 = no smoothing, higher = more responsive
 static var touch_release_smoothing: float = 0.12
+const MOBILE_TOUCH_SMOOTHING := 0.08
+const MOBILE_TOUCH_RELEASE_SMOOTHING := 0.06
 static var touch_releasing: bool = false
 
 # ============================
@@ -113,6 +115,111 @@ static func set_move_joystick_response(deadzone_ratio := 0.14, low_end_boost := 
 
 static func set_move_joystick_anchor_follow(ratio := 0.28) -> void:
 	move_anchor_follow_ratio = clampf(ratio, 0.0, 0.8)
+
+
+## 触屏即时响应：按下即触发，Web 端用 pressed 保证兼容；button_down 仅做视觉反馈。
+static func bind_instant_tap(btn: BaseButton, callback: Callable) -> void:
+	if btn == null:
+		return
+	btn.focus_mode = Control.FOCUS_NONE
+	_prepare_tap_feedback(btn)
+	if btn.has_meta(&"tap_bound"):
+		return
+	btn.set_meta(&"tap_bound", true)
+	btn.pressed.connect(callback)
+	btn.button_down.connect(func() -> void: _flash_tap_press(btn))
+	btn.button_up.connect(func() -> void: _flash_tap_release(btn))
+
+
+## 触屏按住型按钮：按下/松开分别回调，并保持按住高亮。
+static func bind_instant_hold(btn: BaseButton, on_down: Callable, on_up: Callable) -> void:
+	if btn == null:
+		return
+	btn.focus_mode = Control.FOCUS_NONE
+	_prepare_tap_feedback(btn)
+	if btn.has_meta(&"tap_hold_bound"):
+		return
+	btn.set_meta(&"tap_hold_bound", true)
+	btn.button_down.connect(func() -> void:
+		_flash_tap_press(btn, true)
+		on_down.call()
+	)
+	btn.button_up.connect(func() -> void:
+		_flash_tap_release(btn)
+		on_up.call()
+	)
+
+
+static func set_menu_mode(active: bool) -> void:
+	if active:
+		use_floating_joystick = false
+		reset_joystick()
+	elif is_mobile() and not hud_owns_move_joystick:
+		set_floating_joystick_enabled(true)
+
+
+static func _prepare_tap_feedback(btn: BaseButton) -> void:
+	if btn.has_meta(&"tap_feedback_ready"):
+		return
+	btn.set_meta(&"tap_feedback_ready", true)
+	btn.set_meta(&"tap_base_scale", btn.scale)
+	btn.set_meta(&"tap_base_modulate", btn.modulate)
+	if btn.is_inside_tree():
+		btn.pivot_offset = btn.size * 0.5
+	else:
+		btn.ready.connect(func() -> void:
+			btn.pivot_offset = btn.size * 0.5
+		, CONNECT_ONE_SHOT)
+	btn.resized.connect(func() -> void:
+		btn.pivot_offset = btn.size * 0.5
+	)
+
+
+static func _flash_tap_press(btn: BaseButton, hold := false) -> void:
+	_kill_tap_tween(btn)
+	if is_mobile():
+		btn.modulate = Color(0.42, 1.0, 1.18, 1.0)
+	else:
+		btn.scale = Vector2(0.9, 0.9)
+		btn.modulate = Color(0.42, 1.0, 1.18, 1.0)
+	if hold:
+		btn.set_meta(&"tap_holding", true)
+
+
+static func _flash_tap_release(btn: BaseButton) -> void:
+	if btn.has_meta(&"tap_holding"):
+		btn.remove_meta(&"tap_holding")
+	_kill_tap_tween(btn)
+	var base_scale: Vector2 = btn.get_meta(&"tap_base_scale") if btn.has_meta(&"tap_base_scale") else Vector2.ONE
+	var base_modulate: Color = btn.get_meta(&"tap_base_modulate") if btn.has_meta(&"tap_base_modulate") else Color.WHITE
+	if is_mobile():
+		btn.modulate = base_modulate
+		return
+	var tree := btn.get_tree()
+	if tree == null or not is_instance_valid(btn):
+		return
+	var tw := tree.create_tween().set_parallel(true)
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(btn, "scale", base_scale, 0.14)
+	tw.tween_property(btn, "modulate", base_modulate, 0.16)
+	btn.set_meta(&"tap_feedback_tween", tw)
+
+
+static func _kill_tap_tween(btn: BaseButton) -> void:
+	if btn.has_meta(&"tap_feedback_tween"):
+		var tw: Variant = btn.get_meta(&"tap_feedback_tween")
+		if tw is Tween and (tw as Tween).is_valid():
+			(tw as Tween).kill()
+		btn.remove_meta(&"tap_feedback_tween")
+
+
+static func apply_mobile_touch_tuning() -> void:
+	if not is_mobile():
+		return
+	touch_smoothing = MOBILE_TOUCH_SMOOTHING
+	touch_release_smoothing = MOBILE_TOUCH_RELEASE_SMOOTHING
+	set_move_joystick_response(0.10, 0.10, 1.15)
+	set_move_joystick_snap(true, 0.18, 0.68)
 
 # ----------------------------
 # Movement: unified API
@@ -430,7 +537,15 @@ static func reset_aim() -> void:
 	aim_touch_id = -1
 
 static func is_mobile() -> bool:
-	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	return (
+		OS.has_feature("mobile")
+		or OS.has_feature("android")
+		or OS.has_feature("ios")
+		or (OS.has_feature("web") and DisplayServer.is_touchscreen_available())
+	)
+
+static func is_touch_ui() -> bool:
+	return is_mobile() or DisplayServer.is_touchscreen_available()
 
 static func is_pc() -> bool:
 	return OS.has_feature("pc") or OS.has_feature("windows") or OS.has_feature("macos") or OS.has_feature("linux")
@@ -452,8 +567,6 @@ func _ready() -> void:
 	# Mobile-first defaults: enable floating movement joystick unless UI overrides ownership.
 	# Keeps PC keyboard input untouched while making mobile control work by default.
 	auto_select_aim_mode()
+	apply_mobile_touch_tuning()
 	if is_mobile() and not hud_owns_move_joystick:
 		set_floating_joystick_enabled(true)
-		# Sensible thumb feel defaults (can be tuned later via Settings / UI).
-		set_move_joystick_snap(true, 0.22, 0.72)
-		set_move_joystick_response(0.14, 0.22, 1.35)

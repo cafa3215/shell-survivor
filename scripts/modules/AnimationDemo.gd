@@ -81,22 +81,22 @@ func _process(delta: float) -> void:
 	match seg:
 		0:
 			_rig.set_form(PlayerBodyRig.RigForm.BASE)
-			_rig.apply_visual_state(delta, Vector2.ZERO, false, false, false, Vector2.ZERO, 1.0)
+			_rig.apply_visual_state(delta, Vector2.ZERO, false, 0.0, 0.0, Vector2.ZERO, 1.0)
 			_status.text = "状态：段落一：待机"
 		1:
 			_rig.set_form(PlayerBodyRig.RigForm.BASE)
-			_rig.apply_visual_state(delta, Vector2(240, 30), false, false, false, Vector2.ZERO, 1.0)
+			_rig.apply_visual_state(delta, Vector2(240, 30), false, 0.0, 0.0, Vector2.ZERO, 1.0)
 			_status.text = "状态：段落二：跑动"
 		2:
 			_rig.set_form(PlayerBodyRig.RigForm.AWAKENED)
 			var aim := Vector2(1.0, -0.1)
-			_rig.apply_visual_state(delta, Vector2(40, 0), false, false, true, aim, 1.0)
+			_rig.apply_visual_state(delta, Vector2(40, 0), false, 0.0, 1.0, aim, 1.0)
 			_status.text = "状态：段落三：觉醒瞄准"
 		3:
 			# 与事件点同段：以小幅移动维持姿态过渡
 			_rig.set_form(PlayerBodyRig.RigForm.BASE)
-			_rig.apply_visual_state(delta, Vector2(20, 0), false, false, false, Vector2.ZERO, 1.0)
+			_rig.apply_visual_state(delta, Vector2(20, 0), false, 0.0, 0.0, Vector2.ZERO, 1.0)
 		4:
 			_rig.set_form(PlayerBodyRig.RigForm.BASE)
-			_rig.apply_visual_state(delta, Vector2(-120, 10), false, true, false, Vector2.ZERO, -1.0)
+			_rig.apply_visual_state(delta, Vector2(-120, 10), false, 1.0, 0.0, Vector2.ZERO, -1.0)
 			_status.text = "状态：段落四：受击后撤"

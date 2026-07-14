@@ -5,6 +5,9 @@
 依赖: pip install pillow
 运行: python tools/generate_visual_assets.py
 输出: assets/textures/generated/*.png
+
+武器弹体条带 PNG 由 Godot 工具统一生成（与 export_web.ps1 联动）：
+  res://tools/emit_weapon_projectile_pngs.gd → assets/game_pack/vfx/projectiles/
 """
 from __future__ import annotations
 

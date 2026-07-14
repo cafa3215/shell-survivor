@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/core/Main.gd" id="2"]
 [ext_resource type="Theme" path="res://assets/themes/cyber_theme.tres" id="3"]
@@ -15,18 +15,6 @@ shader_parameter/glow_color = Color(0.15, 0.5, 0.9, 1)
 shader_parameter/grid_size = 40.0
 shader_parameter/grid_opacity = 0.18
 shader_parameter/particle_count = 56.0
-
-[sub_resource type="LabelSettings" id="LabelSettings_title"]
-font_size = 48
-font_color = Color(0.35, 0.94, 1.0, 1)
-outline_size = 4
-outline_color = Color(0, 0.12, 0.32, 1)
-
-[sub_resource type="LabelSettings" id="LabelSettings_sub"]
-font_size = 18
-font_color = Color(0.65, 0.78, 0.92, 1)
-outline_size = 2
-outline_color = Color(0, 0.06, 0.14, 0.9)
 
 [node name="Main" type="Node"]
 script = ExtResource("2")
@@ -77,107 +65,123 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -255.0
-offset_right = 220.0
-offset_bottom = 275.0
+offset_left = -250.0
+offset_top = -300.0
+offset_right = 250.0
+offset_bottom = 300.0
 theme_type_variation = &"PanelScreen"
 
-[node name="TitleIcon" type="Label" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -180.0
-offset_top = -195.0
-offset_right = -120.0
-offset_bottom = -145.0
-text = "🎮"
+[node name="Margin" type="MarginContainer" parent="MenuLayer/Root/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="MenuLayer/Root/Panel/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="MetaStatsLabel" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
+text = " "
+autowrap_mode = 3
+horizontal_alignment = 1
+theme_type_variation = &"LabelMeta"
+
+[node name="TitleRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="TitleIcon" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox/TitleRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(44, 0)
+text = "壳"
 theme_type_variation = &"LabelMeta"
 horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="Title" type="Label" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -100.0
-offset_top = -200.0
-offset_right = 200.0
-offset_bottom = -150.0
+[node name="Title" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox/TitleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "弹壳幸存者"
 theme_type_variation = &"LabelTitle"
-label_settings = SubResource("LabelSettings_title")
+theme_override_font_sizes/font_size = 34
 horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="Subtitle" type="Label" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -120.0
-offset_top = -152.0
-offset_right = 120.0
-offset_bottom = -130.0
+[node name="Subtitle" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
 text = "弹壳幸存者"
 theme_type_variation = &"LabelSubtitle"
-label_settings = SubResource("LabelSettings_sub")
 horizontal_alignment = 1
 
-[node name="StartButton" type="Button" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -150.0
-offset_top = -100.0
-offset_right = 150.0
-offset_bottom = -55.0
-text = "🚀 开始游戏"
+[node name="StartButton" type="Button" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 46)
+text = "开始游戏"
 theme_type_variation = &"ButtonPrimary"
 
-[node name="SettingsScroll" type="ScrollContainer" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -150.0
-offset_top = -30.0
-offset_right = 150.0
-offset_bottom = 214.0
+[node name="ExtraButtons" type="HBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HowToButton" type="Button" parent="MenuLayer/Root/Panel/Margin/VBox/ExtraButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "玩法说明"
+theme_type_variation = &"ButtonSecondary"
+
+[node name="MetaUpgradeButton" type="Button" parent="MenuLayer/Root/Panel/Margin/VBox/ExtraButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "战备强化"
+theme_type_variation = &"ButtonSecondary"
+
+[node name="WhiteboxButton" type="Button" parent="MenuLayer/Root/Panel/Margin/VBox/ExtraButtons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "技能白盒"
+theme_type_variation = &"ButtonSecondary"
+
+[node name="SettingsScroll" type="ScrollContainer" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 180)
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
 
-[node name="SettingsContainer" type="VBoxContainer" parent="MenuLayer/Root/Panel/SettingsScroll"]
+[node name="SettingsContainer" type="VBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll"]
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="QualityRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer"]
+[node name="QualityRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer"]
 
-[node name="QualityLabel" type="Label" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/QualityRow"]
+[node name="QualityLabel" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/QualityRow"]
 custom_minimum_size = Vector2(50, 0)
 text = "画质:"
 theme_type_variation = &"LabelBody"
-label_settings = SubResource("LabelSettings_sub")
 
-[node name="Quality" type="OptionButton" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/QualityRow"]
+[node name="Quality" type="OptionButton" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/QualityRow"]
 size_flags_horizontal = 3
 theme_type_variation = &"InputSelect"
 
-[node name="SfxRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer"]
+[node name="SfxRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer"]
 
-[node name="SfxLabel" type="Label" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/SfxRow"]
+[node name="SfxLabel" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/SfxRow"]
 custom_minimum_size = Vector2(50, 0)
 text = "音效:"
 theme_type_variation = &"LabelBody"
-label_settings = SubResource("LabelSettings_sub")
 
-[node name="SfxSlider" type="HSlider" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/SfxRow"]
+[node name="SfxSlider" type="HSlider" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/SfxRow"]
 size_flags_horizontal = 3
 theme_type_variation = &"InputSlider"
 min_value = 0.0
@@ -185,15 +189,14 @@ max_value = 100.0
 step = 5.0
 value = 100.0
 
-[node name="MusicRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer"]
+[node name="MusicRow" type="HBoxContainer" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer"]
 
-[node name="MusicLabel" type="Label" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/MusicRow"]
+[node name="MusicLabel" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/MusicRow"]
 custom_minimum_size = Vector2(50, 0)
 text = "音乐:"
 theme_type_variation = &"LabelBody"
-label_settings = SubResource("LabelSettings_sub")
 
-[node name="MusicSlider" type="HSlider" parent="MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/MusicRow"]
+[node name="MusicSlider" type="HSlider" parent="MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/MusicRow"]
 size_flags_horizontal = 3
 theme_type_variation = &"InputSlider"
 min_value = 0.0
@@ -201,32 +204,16 @@ max_value = 100.0
 step = 5.0
 value = 70.0
 
-[node name="QuitButton" type="Button" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -150.0
-offset_top = 226.0
-offset_right = 150.0
-offset_bottom = 271.0
+[node name="QuitButton" type="Button" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 44)
 text = "退出游戏"
 theme_type_variation = &"ButtonDanger"
 
-[node name="VersionLabel" type="Label" parent="MenuLayer/Root/Panel"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -100.0
-offset_top = 280.0
-offset_right = 100.0
-offset_bottom = 300.0
+[node name="VersionLabel" type="Label" parent="MenuLayer/Root/Panel/Margin/VBox"]
+layout_mode = 2
 text = "版本"
 theme_type_variation = &"LabelMeta"
-label_settings = SubResource("LabelSettings_sub")
 horizontal_alignment = 1
 
 [node name="PauseLayer" type="CanvasLayer" parent="."]

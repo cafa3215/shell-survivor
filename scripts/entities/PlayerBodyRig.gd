@@ -406,10 +406,12 @@ func apply_visual_state(
 	delta: float,
 	vel: Vector2,
 	dead: bool,
-	hit_active: bool,
-	attack_active: bool,
+	hit_blend: float,
+	attack_blend: float,
 	aim_dir: Vector2,
-	last_horiz_facing: float
+	last_horiz_facing: float,
+	dashing: bool = false,
+	dash_dir: Vector2 = Vector2.ZERO
 ) -> void:
 	if dead:
 		visible = false
@@ -419,7 +421,7 @@ func apply_visual_state(
 
 	# 水平朝向：整身镜像（俯视常用）
 	var dir_x := vel.x
-	if aim_dir.length_squared() > 0.0004 and attack_active:
+	if aim_dir.length_squared() > 0.0004 and attack_blend > 0.2:
 		dir_x = aim_dir.x
 	elif absf(dir_x) < _FACING_EPS and absf(last_horiz_facing) > 0.01:
 		dir_x = last_horiz_facing
@@ -432,14 +434,31 @@ func apply_visual_state(
 	_idle_t += delta
 	_apply_glow_pulse(moving)
 
-	if hit_active:
-		_spine.rotation = lerp_angle(_spine.rotation, -0.18 * _last_flip_sign, 0.45)
-		_head.rotation = lerp_angle(_head.rotation, 0.12, 0.35)
-	elif attack_active and aim_dir.length_squared() > 0.0004:
-		# 抬臂前伸（后续可换两节 IK 对齐准星）
-		_arm_r_u.rotation = lerp_angle(_arm_r_u.rotation, -1.05 * _facing_mul, 0.5)
-		_arm_r_l.rotation = lerp_angle(_arm_r_l.rotation, 0.68, 0.45)
-		_spine.rotation = lerp_angle(_spine.rotation, sin(_idle_t * 6.0) * 0.04, 0.3)
+	if hit_blend > 0.01:
+		var hw := hit_blend
+		_spine.rotation = lerp_angle(_spine.rotation, -0.18 * _last_flip_sign * hw, 0.42 * hw)
+		_head.rotation = lerp_angle(_head.rotation, 0.12 * hw, 0.32 * hw)
+	elif attack_blend > 0.01 and aim_dir.length_squared() > 0.0004:
+		var aw := attack_blend
+		_arm_r_u.rotation = lerp_angle(_arm_r_u.rotation, -1.05 * _facing_mul, 0.48 * aw)
+		_arm_r_l.rotation = lerp_angle(_arm_r_l.rotation, 0.68, 0.42 * aw)
+		_spine.rotation = lerp_angle(_spine.rotation, sin(_idle_t * 6.0) * 0.04, 0.28 * aw)
+	elif dashing:
+		var dir := dash_dir if dash_dir.length_squared() > 0.01 else vel
+		if dir.length_squared() < 0.01:
+			dir = Vector2(last_horiz_facing, 0.0)
+		dir = dir.normalized()
+		_run_phase += delta * 12.0
+		var swing := sin(_run_phase * PI * 2.0)
+		var motion_mul := 0.72 if _photo_mode else 0.92
+		_leg_l_u.rotation = swing * 0.42 * motion_mul
+		_leg_r_u.rotation = -swing * 0.42 * motion_mul
+		_arm_l_u.rotation = -swing * 0.28 * motion_mul
+		_arm_r_u.rotation = swing * 0.22 * motion_mul
+		var lean := clampf(dir.x * 0.0014, -0.14, 0.14) * _facing_mul
+		_spine.rotation = lerp_angle(_spine.rotation, lean + dir.y * 0.08, 0.38)
+		_chest.position.y = -9.0 + dir.y * 1.4
+		_head.rotation = lerp_angle(_head.rotation, lean * 0.35, 0.3)
 	elif moving:
 		_run_phase += delta * _RUN_ANIM_FPS * clampf(vel.length() / 175.0, 0.58, 1.35)
 		var swing := sin(_run_phase * PI * 2.0)

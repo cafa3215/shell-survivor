@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>弹体小样 v2 · Neon Survivor</title>
+  <style>
+    :root { --bg:#0a0c12; --card:#12151e; --border:#2a3144; --text:#eef1f8; --muted:#8b93a8; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--text); padding:28px; }
+    h1 { margin:0 0 6px; font-size:24px; }
+    .badge { display:inline-block; background:#1e3a5f; color:#7ec8ff; padding:4px 10px; border-radius:6px; font-size:12px; margin-bottom:12px; }
+    .sub { color:var(--muted); line-height:1.7; font-size:14px; max-width:920px; margin-bottom:24px; }
+    .hero { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; max-width:1200px; }
+    .hero img { width:100%; border:1px solid var(--border); border-radius:10px; background:#080a0f; }
+    .hero figcaption { font-size:12px; color:var(--muted); margin-top:8px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; max-width:1200px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+    .head { padding:12px 14px 8px; border-bottom:3px solid var(--bar,#5ec8ff); }
+    .head h2 { margin:0; font-size:16px; }
+    .head p { margin:4px 0 0; font-size:12px; color:var(--muted); }
+    .body { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:14px; }
+    .panel { background:#080a10; border-radius:8px; padding:10px; text-align:center; }
+    .panel img { width:128px; height:128px; filter:drop-shadow(0 3px 10px rgba(0,0,0,.55)); }
+    .anim { display:flex; gap:6px; justify-content:center; align-items:center; min-height:128px; }
+    .anim img { width:52px; height:52px; filter:drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
+    .panel span { display:block; font-size:11px; color:var(--muted); margin-top:6px; }
+    .note { margin-top:24px; max-width:920px; padding:16px; border:1px dashed var(--border); border-radius:8px; color:var(--muted); font-size:13px; line-height:1.75; }
+  </style>
+</head>
+<body>
+  <h1>弹体小样 v2</h1>
+  <div class="badge">Neon Survivor · 统一风格 · 未合入游戏</div>
+  <p class="sub">
+    风格：平滑矢量感 + 武器色光晕 + 深色描边 + 前端亮核。每种武器有独立轮廓，共享同一渲染语法。<br>
+    右侧为 4 帧动画切片。确认后回复「同意」，才会替换实机弹体。
+  </p>
+
+  <div class="hero">
+    <figure>
+      <img src="preview_sheet.png" alt="总览" />
+      <figcaption>11 种武器总览 + 齐射示意</figcaption>
+    </figure>
+    <figure>
+      <img src="combat_volley_demo.png" alt="密集可读性" />
+      <figcaption>模拟怪海背景下的齐射可读性（6 种战斗武器）</figcaption>
+    </figure>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="note">
+    <strong>统一语法：</strong>光晕底 → 主体描边 → 内部高光 → 前端亮核<br>
+    <strong>文件：</strong><code>assets/previews/weapon_projectiles/sample_v2/</code><br>
+    <strong>实机状态：</strong>当前游戏仍使用旧弹体，本目录仅为小样预览。
+  </div>
+
+  <script>
+    const weapons = [
+      { id:"kunai", name:"苦无 ★", bar:"#5ec8ff", tag:"长刃·金护手·缠绳柄" },
+      { id:"quantum_ball", name:"量子球 ★", bar:"#7cff7a", tag:"双六角·轨道节点·亮核" },
+      { id:"lightning", name:"雷电 ★", bar:"#7ad4ff", tag:"粗锯齿·分叉·电晕" },
+      { id:"rocket", name:"火箭 ★", bar:"#ff8a45", tag:"锥头·四翼·双层焰" },
+      { id:"boomerang", name:"回旋镖 ★", bar:"#ffd45a", tag:"厚V双翼·握点" },
+      { id:"drone_ab", name:"无人机 ★", bar:"#8ec8ff", tag:"四旋翼·镜头·天线" },
+      { id:"molotov", name:"燃烧瓶", bar:"#ff7a35", tag:"瓶身·布条·火焰" },
+      { id:"guardian", name:"守卫者", bar:"#ffd86a", tag:"盾形·纹章" },
+      { id:"frost_aura", name:"冰霜", bar:"#7ec8ff", tag:"六臂雪花" },
+      { id:"heal_aura", name:"治疗", bar:"#5cff9a", tag:"绿环·粗十字" },
+      { id:"stun_mine", name:"地雷", bar:"#c88aff", tag:"刺六角·闪烁核" },
+    ];
+    const grid = document.getElementById("grid");
+    for (const w of weapons) {
+      const el = document.createElement("article");
+      el.className = "card";
+      el.style.setProperty("--bar", w.bar);
+      el.innerHTML = `
+        <div class="head"><h2>${w.name}</h2><p>${w.id} · ${w.tag}</p></div>
+        <div class="body">
+          <div class="panel">
+            <img src="${w.id}.png" alt="${w.name}" />
+            <span>主视图</span>
+          </div>
+          <div class="panel">
+            <div class="anim">
+              ${[0,1,2,3].map(f => `<img src="${w.id}_f${f}.png" alt="" />`).join("")}
+            </div>
+            <span>动画 4 帧</span>
+          </div>
+        </div>`;
+      grid.appendChild(el);
+    }
+  </script>
+</body>
+</html>

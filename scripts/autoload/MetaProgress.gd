@@ -15,6 +15,11 @@ var scrap: int = 0
 var meta_upgrade_levels: Dictionary = {}
 ## 战备遗物：碎片一次性「入库」后永久可进开局随机池（仅对 GameDB.RUN_RELICS 中带 scrap_unlock 的条目）
 var run_relic_scrap_unlocked: Dictionary = {}
+## 地图精通：map_id → 0~3 星
+var map_mastery: Dictionary = {}
+## 收藏：融合见过 / 流派专精见过（无数值膨胀，只做勾选）
+var fusions_seen: Dictionary = {}
+var school_mastery_seen: Dictionary = {}
 
 
 func _ready() -> void:
@@ -51,6 +56,17 @@ func _load() -> void:
 		scrap = mini(runs_total * 5 + wins_total * 10, 500)
 		_save()
 	_load_run_relic_unlocks_from_cfg(cfg)
+	_load_map_mastery_from_cfg(cfg)
+	_load_bool_section_from_cfg(cfg, "fusions_seen", fusions_seen)
+	_load_bool_section_from_cfg(cfg, "school_mastery_seen", school_mastery_seen)
+
+
+func _load_map_mastery_from_cfg(cfg: ConfigFile) -> void:
+	map_mastery.clear()
+	if not cfg.has_section("map_mastery"):
+		return
+	for k in cfg.get_section_keys("map_mastery"):
+		map_mastery[String(k)] = clampi(int(cfg.get_value("map_mastery", k, 0)), 0, 3)
 
 
 func _load_run_relic_unlocks_from_cfg(cfg: ConfigFile) -> void:
@@ -60,6 +76,15 @@ func _load_run_relic_unlocks_from_cfg(cfg: ConfigFile) -> void:
 	for k in cfg.get_section_keys("run_relic_unlocks"):
 		if bool(cfg.get_value("run_relic_unlocks", k, false)):
 			run_relic_scrap_unlocked[String(k)] = true
+
+
+func _load_bool_section_from_cfg(cfg: ConfigFile, section: String, into: Dictionary) -> void:
+	into.clear()
+	if not cfg.has_section(section):
+		return
+	for k in cfg.get_section_keys(section):
+		if bool(cfg.get_value(section, k, false)):
+			into[String(k)] = true
 
 
 func _ensure_meta_upgrade_keys() -> void:
@@ -95,14 +120,113 @@ func _save() -> void:
 	for rk in run_relic_scrap_unlocked.keys():
 		if bool(run_relic_scrap_unlocked.get(rk, false)):
 			cfg.set_value("run_relic_unlocks", str(rk), true)
+	for mk in map_mastery.keys():
+		cfg.set_value("map_mastery", str(mk), clampi(int(map_mastery.get(mk, 0)), 0, 3))
+	for fk in fusions_seen.keys():
+		if bool(fusions_seen.get(fk, false)):
+			cfg.set_value("fusions_seen", str(fk), true)
+	for sk in school_mastery_seen.keys():
+		if bool(school_mastery_seen.get(sk, false)):
+			cfg.set_value("school_mastery_seen", str(sk), true)
 	var err := cfg.save(SAVE_PATH)
 	if err != OK:
 		push_warning("MetaProgress: 存档写入失败 (%d)" % err)
 
 
-func record_run_ended(win: bool, runtime_sec: int, cleared_map_index: int = -1) -> Dictionary:
+func mark_fusion_seen(fusion_id: String) -> bool:
+	var fid := String(fusion_id)
+	if fid.is_empty() or not GameDB.FUSIONS.has(fid):
+		return false
+	if bool(fusions_seen.get(fid, false)):
+		return false
+	fusions_seen[fid] = true
+	_save()
+	_try_unlock_codex_achievements()
+	return true
+
+
+func mark_school_mastery_seen(passive_id: String) -> bool:
+	var pid := String(passive_id)
+	if pid.is_empty() or not (pid in GameDB.SCHOOL_MASTERY_IDS):
+		return false
+	if bool(school_mastery_seen.get(pid, false)):
+		return false
+	school_mastery_seen[pid] = true
+	_save()
+	_try_unlock_codex_achievements()
+	return true
+
+
+func _try_unlock_codex_achievements() -> void:
+	if AchievementService == null:
+		return
+	var fuse_cap := maxi(1, fusion_total_count())
+	if fusion_seen_count() * 2 >= fuse_cap:
+		AchievementService.try_unlock("codex_fusions_half")
+	if school_mastery_seen_count() >= GameDB.SCHOOL_MASTERY_IDS.size():
+		AchievementService.try_unlock("codex_schools_all")
+
+
+func fusion_seen_count() -> int:
+	var n := 0
+	for fid in GameDB.FUSIONS.keys():
+		if bool(fusions_seen.get(String(fid), false)):
+			n += 1
+	return n
+
+
+func fusion_total_count() -> int:
+	return GameDB.FUSIONS.size()
+
+
+func school_mastery_seen_count() -> int:
+	var n := 0
+	for pid in GameDB.SCHOOL_MASTERY_IDS:
+		if bool(school_mastery_seen.get(String(pid), false)):
+			n += 1
+	return n
+
+
+func is_meta_upgrades_maxed() -> bool:
+	for uid in GameDB.META_PERMANENT_UPGRADES.keys():
+		var def: Dictionary = GameDB.META_PERMANENT_UPGRADES[uid]
+		if int(meta_upgrade_levels.get(uid, 0)) < int(def.get("max_lv", 0)):
+			return false
+	return true
+
+
+## 满 Meta 后仍给收藏/挑战目标（禁止用数值膨胀填空）
+func next_goal_line() -> String:
+	var map_n := maxi(1, GameDB.MAP_TEMPLATES.size())
+	var star_cap := map_n * 3
+	var stars := total_map_mastery_stars()
+	if stars < star_cap:
+		return "下一目标：地图精通 %d / %d★（称号进度，无永久属性）" % [stars, star_cap]
+	var fuse_n := fusion_seen_count()
+	var fuse_cap := fusion_total_count()
+	if fuse_n < fuse_cap:
+		return "下一目标：融合图鉴 %d / %d（局内激活过即勾选）" % [fuse_n, fuse_cap]
+	var school_n := school_mastery_seen_count()
+	var school_cap := GameDB.SCHOOL_MASTERY_IDS.size()
+	if school_n < school_cap:
+		return "下一目标：五流派专精 %d / %d（点过一级即勾选）" % [school_n, school_cap]
+	if AchievementService != null:
+		if not AchievementService.is_unlocked("chal_any_nightmare"):
+			return "下一目标：任意契约 × 噩梦难度胜利（契约噩梦徽章）"
+		if not AchievementService.is_unlocked("chal_glass_nightmare"):
+			return "下一目标：玻璃契约 × 噩梦难度胜利（碎镜噩梦）"
+		if not AchievementService.is_unlocked("build_all_eight"):
+			return "下一目标：八条主流构筑各通关一次"
+		if not AchievementService.is_unlocked("endless_survive"):
+			return "下一目标：持久撤离后进入无尽并坚持到倒下"
+	return "下一目标：换专精 / 契约 / 地图再开一局，追逐不同构筑手感"
+
+
+func record_run_ended(win: bool, runtime_sec: int, cleared_map_index: int = -1, run_context: Dictionary = {}) -> Dictionary:
 	var unlock_line := ""
+	var mastery_lines: Array[String] = []
 	var scrap_delta := 0
+	var scrap_mul := 1.0
 	runs_total += 1
 	var mi := 0
 	if cleared_map_index >= 0:
@@ -114,15 +238,19 @@ func record_run_ended(win: bool, runtime_sec: int, cleared_map_index: int = -1) 
 		if cleared_map_index >= 0 and mi == unlocked_map_upto and unlocked_map_upto < last_i:
 			unlocked_map_upto += 1
 			unlock_line = "新作战区域已开放：%s" % _map_title_at(unlocked_map_upto)
-		scrap_delta = GameDB.meta_scrap_win_amount(mi)
+		scrap_mul = _scrap_reward_multiplier(run_context)
+		scrap_delta = int(round(float(GameDB.meta_scrap_win_amount(mi)) * scrap_mul))
+		mastery_lines = _evaluate_map_mastery(mi, run_context)
 	else:
 		scrap_delta = GameDB.META_SCRAP_LOSS
 	scrap = maxi(0, scrap + scrap_delta)
 	_save()
 	return {
 		"unlock_line": unlock_line,
+		"mastery_lines": mastery_lines,
 		"scrap_delta": scrap_delta,
 		"scrap_total": scrap,
+		"scrap_mul": scrap_mul,
 	}
 
 
@@ -164,6 +292,70 @@ func try_purchase_run_relic_unlock(rid: String) -> bool:
 	run_relic_scrap_unlocked[rid] = true
 	_save()
 	return true
+
+
+func try_spend_scrap(amount: int) -> bool:
+	if amount <= 0:
+		return false
+	if scrap < amount:
+		return false
+	scrap -= amount
+	_save()
+	return true
+
+
+func get_map_stars(map_index: int) -> int:
+	var key := GameDB.map_mastery_key(map_index)
+	return clampi(int(map_mastery.get(key, 0)), 0, 3)
+
+
+func get_map_mastery_stat_bonus(map_index: int) -> Dictionary:
+	var stars := get_map_stars(map_index)
+	var out: Dictionary = {}
+	for i in mini(stars, GameDB.MAP_MASTERY_PER_STAR.size()):
+		var perk: Dictionary = GameDB.MAP_MASTERY_PER_STAR[i]
+		for k in perk.keys():
+			var sk := String(k)
+			out[sk] = float(out.get(sk, 0.0)) + float(perk[k])
+	return out
+
+
+func total_map_mastery_stars() -> int:
+	var total := 0
+	for i in GameDB.MAP_TEMPLATES.size():
+		total += get_map_stars(i)
+	return total
+
+
+func _scrap_reward_multiplier(run_context: Dictionary) -> float:
+	var diff_id := GameDB.normalize_difficulty_id(String(run_context.get("difficulty_id", GameDB.DEFAULT_DIFFICULTY)))
+	var challenge_id := GameDB.normalize_challenge_id(String(run_context.get("challenge_id", "none")))
+	var diff: Dictionary = GameDB.get_difficulty_tier(diff_id)
+	var challenge: Dictionary = GameDB.get_challenge_contract(challenge_id)
+	return float(diff.get("scrap_mul", 1.0)) * float(challenge.get("scrap_mul", 1.0))
+
+
+func _evaluate_map_mastery(map_index: int, run_context: Dictionary) -> Array[String]:
+	var lines: Array[String] = []
+	var key := GameDB.map_mastery_key(map_index)
+	var before := clampi(int(map_mastery.get(key, 0)), 0, 3)
+	var stars := before
+	if stars < 1:
+		stars = 1
+		lines.append("%s 精通 +1：首次通关胜利" % _map_title_at(map_index))
+	if stars < 2 and (bool(run_context.get("no_curse", false)) or bool(run_context.get("zone_objective_done", false))):
+		stars = 2
+		if bool(run_context.get("no_curse", false)):
+			lines.append("%s 精通 +1：无诅咒通关" % _map_title_at(map_index))
+		else:
+			lines.append("%s 精通 +1：完成区域任务" % _map_title_at(map_index))
+	var boss_sec := int(run_context.get("boss_defeat_sec", -1))
+	if stars < 3 and boss_sec >= 0 and boss_sec <= GameDB.MAP_MASTERY_SPEED_BOSS_SEC:
+		stars = 3
+		lines.append("%s 精通 +1：8 分钟内击破首领" % _map_title_at(map_index))
+	if stars > before:
+		map_mastery[key] = stars
+	return lines
 
 
 func try_purchase_meta_upgrade(uid: String) -> bool:
@@ -212,16 +404,23 @@ func summary_line() -> String:
 	if meta_sum > 0:
 		meta_bit = " · 永久强化合计 %d 级" % meta_sum
 	var relic_prog := GameDB.run_relic_pool_progress_text()
+	var mastery_sum := total_map_mastery_stars()
+	var mastery_bit := ""
+	if mastery_sum > 0:
+		mastery_bit = " · 地图精通 %d★" % mastery_sum
+	var ach_bit := ""
+	if AchievementService != null:
+		ach_bit = " · " + AchievementService.summary_line()
 	if runs_total <= 0:
-		return "局外：尚无记录 · 战备碎片 %d%s · %s · %s" % [scrap, meta_bit, relic_prog, prog]
+		return "局外：尚无记录 · 战备碎片 %d%s%s%s · %s · %s" % [scrap, meta_bit, mastery_bit, ach_bit, relic_prog, prog]
 	var wr := float(wins_total) / float(runs_total) * 100.0
 	var best := "—"
 	if best_win_runtime_sec < 999000:
 		var m := best_win_runtime_sec / 60
 		var s := best_win_runtime_sec % 60
 		best = "%02d:%02d" % [m, s]
-	return "累计 %d 局 · 胜 %d（%.0f%%）· 最快胜利 %s · 战备碎片 %d%s · %s · %s" % [
-		runs_total, wins_total, wr, best, scrap, meta_bit, relic_prog, prog
+	return "累计 %d 局 · 胜 %d（%.0f%%）· 最快胜利 %s · 战备碎片 %d%s%s%s · %s · %s" % [
+		runs_total, wins_total, wr, best, scrap, meta_bit, mastery_bit, ach_bit, relic_prog, prog
 	]
 
 

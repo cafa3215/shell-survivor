@@ -11,17 +11,23 @@ var _is_picking := false
 var _card_buttons: Array[Button] = []
 var _card_recommended: Array[bool] = [false, false, false]
 var _hovered_card_idx := -1
+var _upgrade_system: Node = null
+var _service_row: HBoxContainer = null
+var _reroll_btn: Button = null
+var _ban_btn: Button = null
+var _scrap_label: Label = null
+var _ban_mode := false
 
 func _ready() -> void:
 	_card_buttons = [c1, c2, c3]
 	for b in _card_buttons:
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		b.custom_minimum_size = Vector2(0, 148)
+		b.custom_minimum_size = Vector2(0, 118)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.size_flags_stretch_ratio = 1.0
-	c1.pressed.connect(func(): _pick(0))
-	c2.pressed.connect(func(): _pick(1))
-	c3.pressed.connect(func(): _pick(2))
+	InputManager.bind_instant_tap(c1, func(): _pick(0))
+	InputManager.bind_instant_tap(c2, func(): _pick(1))
+	InputManager.bind_instant_tap(c3, func(): _pick(2))
 	for i in _card_buttons.size():
 		var b := _card_buttons[i]
 		b.mouse_entered.connect(func() -> void:
@@ -35,16 +41,76 @@ func _ready() -> void:
 			_refresh_card_variations()
 			_reset_card_scales()
 		)
-	# 延迟获取引用（避免时序问题）
 	call_deferred("_cache_refs")
+	call_deferred("_ensure_service_row")
+
+
+func _ensure_service_row() -> void:
+	if _service_row != null and is_instance_valid(_service_row):
+		return
+	var vbox := get_node_or_null("Background/Margin/VBox") as VBoxContainer
+	if vbox == null:
+		return
+	_service_row = HBoxContainer.new()
+	_service_row.name = "ServiceRow"
+	_service_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_service_row.add_theme_constant_override("separation", 10)
+	_scrap_label = Label.new()
+	_scrap_label.theme_type_variation = &"Label.Meta"
+	_scrap_label.text = "碎片 0"
+	_service_row.add_child(_scrap_label)
+	_reroll_btn = Button.new()
+	_reroll_btn.text = "重抽"
+	_reroll_btn.theme_type_variation = &"Button.Secondary"
+	InputManager.bind_instant_tap(_reroll_btn, func() -> void:
+		if _upgrade_system and _upgrade_system.has_method("try_scrap_reroll"):
+			_upgrade_system.call("try_scrap_reroll")
+	)
+	_service_row.add_child(_reroll_btn)
+	_ban_btn = Button.new()
+	_ban_btn.text = "排除"
+	_ban_btn.theme_type_variation = &"Button.Secondary"
+	InputManager.bind_instant_tap(_ban_btn, func() -> void:
+		_ban_mode = true
+		if _scrap_label:
+			_scrap_label.text = "点选要排除的卡片"
+	)
+	_service_row.add_child(_ban_btn)
+	var card_row := vbox.get_node_or_null("CardRow")
+	if card_row:
+		vbox.add_child(_service_row)
+		vbox.move_child(_service_row, card_row.get_index())
+
 
 func _cache_refs() -> void:
 	var game := get_parent().get_parent()
 	if game:
 		_weapon_system = game.get_node_or_null("WeaponSystem")
 		_skill_system = game.get_node_or_null("SkillSystem")
+	var up_sys := get_parent()
+	if up_sys:
+		_upgrade_system = up_sys
 
-func open_with_options(opts: Array) -> void:
+
+func _refresh_service_buttons(service_state: Dictionary) -> void:
+	if _scrap_label == null:
+		call_deferred("_ensure_service_row")
+		return
+	var scrap := int(service_state.get("scrap", MetaProgress.scrap))
+	var reroll_cost := int(service_state.get("reroll_cost", GameDB.RUN_SCRAP_REROLL_COST))
+	var ban_cost := int(service_state.get("ban_cost", GameDB.RUN_SCRAP_BAN_COST))
+	var reroll_used := bool(service_state.get("reroll_used", false))
+	var ban_used := bool(service_state.get("ban_used", false))
+	_scrap_label.text = "战备碎片 %d" % scrap
+	if _reroll_btn:
+		_reroll_btn.text = "重抽 (-%d)" % reroll_cost
+		_reroll_btn.disabled = reroll_used or scrap < reroll_cost
+	if _ban_btn:
+		_ban_btn.text = "排除 (-%d)" % ban_cost
+		_ban_btn.disabled = ban_used or scrap < ban_cost
+
+
+func open_with_options(opts: Array, service_state: Dictionary = {}) -> void:
 	visible = true
 	_is_picking = false
 	_ids.clear()
@@ -54,39 +120,31 @@ func open_with_options(opts: Array) -> void:
 			var id := ""
 			var recommended := false
 			var synergy := false
-			var synergy_label := ""
-			var synergy_badge := ""
 			var hint := ""
-			var card_icon := ""
 			if opts[i] is Dictionary:
 				var d: Dictionary = opts[i]
 				id = String(d.get("id", ""))
 				recommended = bool(d.get("recommended", false))
 				synergy = bool(d.get("synergy", false))
-				synergy_label = String(d.get("synergy_label", ""))
-				synergy_badge = String(d.get("synergy_badge", ""))
 				hint = String(d.get("hint", ""))
-				card_icon = String(d.get("icon", ""))
 			else:
 				id = String(opts[i])
-			if synergy and not synergy_label.is_empty():
-				var badge_prefix := (synergy_badge + " ") if not synergy_badge.is_empty() else ""
-				hint = badge_prefix + "连携：" + synergy_label + (("｜" + hint) if not hint.is_empty() else "")
 			_ids.append(id)
 			btn.visible = true
 			btn.disabled = false
 			btn.scale = Vector2.ONE
-			btn.text = _label_of(id, recommended, synergy, hint, card_icon)
+			btn.text = _label_of(id, recommended, synergy, hint)
 			_card_recommended[i] = recommended
 		else:
 			btn.visible = false
 			btn.disabled = true
 			_card_recommended[i] = false
 	_hovered_card_idx = -1
+	_ban_mode = false
+	_refresh_service_buttons(service_state)
 	_refresh_card_variations()
 	_reset_card_scales()
 	call_deferred("_apply_responsive_layout")
-
 
 func _apply_responsive_layout() -> void:
 	var bg := get_node_or_null("Background") as PanelContainer
@@ -105,6 +163,11 @@ func _apply_responsive_layout() -> void:
 func _pick(i: int) -> void:
 	if i >= _ids.size() or _is_picking:
 		return
+	if _ban_mode:
+		if _upgrade_system and _upgrade_system.has_method("try_scrap_ban_option"):
+			if _upgrade_system.call("try_scrap_ban_option", i):
+				_ban_mode = false
+		return
 	_is_picking = true
 	var chosen := StringName(_ids[i])
 	for idx in _card_buttons.size():
@@ -112,6 +175,8 @@ func _pick(i: int) -> void:
 		b.disabled = true
 	_apply_selected_state(i)
 	var picked_btn := _card_buttons[i]
+	picked_btn.modulate = Color(0.38, 1.0, 1.15, 1.0)
+	picked_btn.scale = Vector2(0.94, 0.94)
 	var tw := create_tween().set_trans(UIMotion.TRANS_SNAP).set_ease(UIMotion.EASE_SNAP)
 	tw.tween_property(picked_btn, "scale", Vector2.ONE * 1.08, UIMotion.MOTION_UI_FEEDBACK)
 	tw.set_trans(UIMotion.TRANS_ENTRANCE).set_ease(UIMotion.EASE_OUT)
@@ -164,135 +229,122 @@ func _on_card_hover(i: int) -> void:
 		var target := Vector2.ONE * (1.03 if idx == i else 1.0)
 		b.scale = b.scale.lerp(target, 0.42)
 
-func _label_of(id: String, recommended := false, synergy := false, hint := "", card_icon := "") -> String:
-	var icon_prefix := ""
-	if not card_icon.is_empty():
-		icon_prefix = card_icon + " "
-	var lead := ""
+func _label_of(id: String, recommended := false, synergy := false, hint := "") -> String:
+	var lines: PackedStringArray = []
+	var name := _display_name(id)
 	if recommended:
-		lead += "★推荐 "
-	if synergy:
-		lead += "◎连携 "
-	var prefix := icon_prefix + (lead.strip_edges() + "\n" if not lead.is_empty() else "")
-	
-	var title := ""
-	var detail := ""
-	var level_info := ""
-	
+		lines.append("★ " + name)
+	elif synergy:
+		lines.append("◆ " + name)
+	else:
+		lines.append(name)
+	var lv_line := _level_line(id)
+	if not lv_line.is_empty():
+		lines.append(lv_line)
+	var effect := _compact_effect(id, hint)
+	if not effect.is_empty():
+		lines.append(effect)
+	return "\n".join(lines)
+
+func _display_name(id: String) -> String:
 	if id.begins_with("w:"):
 		var wid := id.trim_prefix("w:")
-		title = "【武器】"
-		detail = String(GameDB.WEAPONS[wid]["name"])
-		# 显示当前等级
+		return String(GameDB.WEAPONS.get(wid, {}).get("name", wid))
+	if id.begins_with("p:"):
+		var pid := id.trim_prefix("p:")
+		return String(GameDB.PASSIVES.get(pid, {}).get("name", pid))
+	if id.begins_with("m:"):
+		var mid := id.trim_prefix("m:")
+		var raw := String(GameDB.MUTATIONS.get(mid, {}).get("name", mid))
+		return raw.replace("异变·", "")
+	if id.begins_with("f:"):
+		var fid := id.trim_prefix("f:")
+		var wid := String(GameDB.FUSIONS.get(fid, {}).get("weapon", ""))
+		if not wid.is_empty():
+			return String(GameDB.WEAPONS.get(wid, {}).get("name", wid)) + "·超武"
+		return fid.replace("_ex", "")
+	return id
+
+func _level_line(id: String) -> String:
+	if id.begins_with("w:"):
+		var wid := id.trim_prefix("w:")
 		if _weapon_system:
 			var cur_lv := int(_weapon_system.level_map.get(wid, 0))
 			if cur_lv > 0:
-				level_info = "  Lv.%d→%d" % [cur_lv, mini(cur_lv + 1, 5)]
-				# 融合前置检查
+				return "Lv.%d → %d" % [cur_lv, mini(cur_lv + 1, 5)]
+			return "新武器"
+	elif id.begins_with("p:"):
+		var pid := id.trim_prefix("p:")
+		if _skill_system and GameDB.PASSIVES.has(pid):
+			var cur_lv := int(_skill_system.passive_levels.get(pid, 0))
+			var max_lv := int(GameDB.PASSIVES[pid]["max_lv"])
+			return "Lv.%d → %d" % [cur_lv, mini(cur_lv + 1, max_lv)]
+	elif id.begins_with("m:"):
+		var mid := id.trim_prefix("m:")
+		if _skill_system and GameDB.MUTATIONS.has(mid):
+			var cur_m := int(_skill_system.get_mutation_level(mid))
+			var max_m := int(GameDB.MUTATIONS[mid]["max_lv"])
+			return "层 %d → %d" % [cur_m, mini(cur_m + 1, max_m)]
+	elif id.begins_with("f:"):
+		return "Lv.5 → 6"
+	return ""
+
+func _compact_effect(id: String, hint: String) -> String:
+	if id.begins_with("p:"):
+		var pid := id.trim_prefix("p:")
+		var fx := SkillSystem.passive_upgrade_effect_text(pid)
+		if not fx.is_empty():
+			return fx
+	elif id.begins_with("m:"):
+		var mid := id.trim_prefix("m:")
+		if GameDB.MUTATIONS.has(mid):
+			var sp: Dictionary = GameDB.MUTATIONS[mid].get("stats_per_lv", {}) as Dictionary
+			for sk in sp.keys():
+				return _mutation_stat_short(String(sk), float(sp[sk]))
+	elif id.begins_with("f:"):
+		var fid := id.trim_prefix("f:")
+		if GameDB.FUSIONS.has(fid):
+			return String(GameDB.FUSIONS[fid].get("desc", "武器质变"))
+	elif id.begins_with("w:"):
+		var wid := id.trim_prefix("w:")
+		var cur_lv := 0
+		if _weapon_system:
+			cur_lv = int(_weapon_system.level_map.get(wid, 0))
+			if cur_lv > 0:
 				for fid in GameDB.FUSIONS.keys():
 					var f: Dictionary = GameDB.FUSIONS[fid]
 					if String(f["weapon"]) == wid and cur_lv + 1 >= 5:
-						var req: Dictionary = f["requires"]
-						var req_met := true
-						var req_text := ""
-						if _skill_system:
-							for pid in req.keys():
-								var plv := int(_skill_system.passive_levels.get(pid, 0))
-								if plv < int(req[pid]):
-									req_met = false
-									req_text += " %s%d→%d" % [String(GameDB.PASSIVES[pid]["name"]), plv, int(req[pid])]
-						if req_met:
-							hint = "★融合可激活！"
-						else:
-							hint = "融合前置:%s" % req_text
-			else:
-				level_info = "  新武器"
-		if hint.is_empty():
-			hint = "提升武器等级，增强攻击力"
-	elif id.begins_with("p:"):
-		var pid: String = id.trim_prefix("p:")
-		title = "【被动】"
-		detail = String(GameDB.PASSIVES[pid]["name"])
-		# 显示当前等级和效果
-		if _skill_system:
-			var cur_lv: int = int(_skill_system.passive_levels.get(pid, 0))
-			var max_lv: int = int(GameDB.PASSIVES[pid]["max_lv"])
-			level_info = "  Lv.%d→%d" % [cur_lv, mini(cur_lv + 1, max_lv)]
-			# 显示具体效果
-			var effect_text: String = _passive_effect_text(pid, cur_lv + 1)
-			if not effect_text.is_empty():
-				hint = effect_text
-		if hint.is_empty():
-			hint = _passive_hint(pid)
-	elif id.begins_with("m:"):
-		var mid := id.trim_prefix("m:")
-		title = "【变异】"
-		if GameDB.MUTATIONS.has(mid):
-			var mdef: Dictionary = GameDB.MUTATIONS[mid]
-			detail = String(mdef["name"])
-			if _skill_system:
-				var cur_m := int(_skill_system.get_mutation_level(mid))
-				var max_m := int(mdef["max_lv"])
-				level_info = "  层数 %d→%d（上限%d）" % [cur_m, mini(cur_m + 1, max_m), max_m]
-		if hint.is_empty():
-			hint = "与武器/被动分轨的永久构筑强化"
-	elif id.begins_with("f:"):
-		title = "【融合】"
-		var fid := id.trim_prefix("f:")
-		detail = fid.replace("_ex", "进化")
-		var wid := String(GameDB.FUSIONS.get(fid, {}).get("weapon", ""))
-		if not wid.is_empty():
-			level_info = "  Lv.5→6(进化)"
-		if hint.is_empty():
-			hint = "武器质变：伤害×1.5 + 独特强化"
-	else:
-		title = "【?】"
-		detail = id
-	
-	return "%s%s%s%s\n%s" % [prefix, title, detail, level_info, hint]
+						return "可融合"
+		if not hint.is_empty() and hint.length() <= 14:
+			return hint
+		if cur_lv > 0:
+			return "火力提升"
+		return ""
+	if not hint.is_empty() and hint.length() <= 16:
+		return hint
+	return ""
 
-func _passive_effect_text(pid: String, next_lv: int) -> String:
-	match pid:
-		"xp_boost":
-			return "经验+%d%%（当前+%d%%）" % [next_lv * 12, (next_lv - 1) * 12]
-		"atk_boost":
-			return "攻击+%d%%（当前+%d%%）" % [next_lv * 8, (next_lv - 1) * 8]
-		"move_speed":
-			return "移速+%d%%（当前+%d%%）" % [next_lv * 6, (next_lv - 1) * 6]
-		"damage_reduction":
-			return "减伤+%d%%（当前+%d%%）" % [next_lv * 6, (next_lv - 1) * 6]
+func _mutation_stat_short(stat_key: String, per_lv: float) -> String:
+	match stat_key:
+		"atk_bonus":
+			return "攻击 +%d%%" % int(round(per_lv * 100.0))
+		"move_bonus":
+			return "移速 +%d%%" % int(round(per_lv * 100.0))
+		"dr":
+			return "减伤 +%d%%" % int(round(per_lv * 100.0))
 		"lifesteal":
-			return "吸血+%d%%（当前+%d%%）" % [next_lv * 3, (next_lv - 1) * 3]
+			return "吸血 +%d%%" % int(round(per_lv * 100.0))
+		"xp_bonus":
+			return "经验 +%d%%" % int(round(per_lv * 100.0))
 		"fire_rate":
-			return "射速+%d%%（当前+%d%%）" % [next_lv * 8, (next_lv - 1) * 8]
+			return "射速 +%d%%" % int(round(per_lv * 100.0))
 		"crit_chance":
-			return "暴击+%d%%（当前+%d%%）" % [5 + next_lv * 5, 5 + (next_lv - 1) * 5]
+			return "暴击 +%d%%" % int(round(per_lv * 100.0))
 		"pickup_range":
-			return "拾取+%dpx（当前+%dpx）" % [next_lv * 25, (next_lv - 1) * 25]
+			return "拾取 +%d" % int(round(per_lv))
 		"hp_growth":
-			return "生命+%d（当前+%d）" % [100 + next_lv * 15, 100 + (next_lv - 1) * 15]
+			return "生命 +%d" % int(round(per_lv))
+		"shield_amount":
+			return "护盾 +%d" % int(round(per_lv))
 		_:
 			return ""
-
-func _passive_hint(pid: String) -> String:
-	match pid:
-		"xp_boost":
-			return "经验成长更快，缩短成型时间"
-		"atk_boost":
-			return "直接提升所有武器伤害"
-		"move_speed":
-			return "走位容错提升，规避弹幕更稳定"
-		"damage_reduction":
-			return "硬度提升，防止后期暴毙"
-		"lifesteal":
-			return "持续作战能力提升"
-		"fire_rate":
-			return "攻速/冷却收益显著"
-		"crit_chance":
-			return "暴击时伤害翻倍，爆发提升巨大"
-		"pickup_range":
-			return "经验球磁吸范围扩大，升级更快"
-		"hp_growth":
-			return "最大生命值提升，容错率增加"
-		_:
-			return "强化构筑协同"

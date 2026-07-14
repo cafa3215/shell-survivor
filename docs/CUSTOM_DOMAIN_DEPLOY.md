@@ -2,28 +2,53 @@
 
 > 目标：`https://www.sbhigakf215dadjwahi.xyz/` 打开后**先选项目**，再进入 OUR STORY、游戏或后续新项目。
 
+作品集门户源码在 workspace 根目录 **`portfolio/`**。
+
+## 部署方式
+
+| 你的托管 | 文档 |
+|----------|------|
+| **Vercel**（当前域名指向 Vercel） | [portfolio/README.md](../../portfolio/README.md) |
+| 自有 VPS + Nginx | 本文档下方步骤 |
+
 ---
+
+## Vercel 快速指引
+
+1. OUR STORY 已配置 `baseURL: '/story/'`，重新部署后确认 `*.vercel.app/story` 可访问
+2. 在 Vercel 新建项目，Root Directory = `portfolio`
+3. 设置 `STORY_DEPLOY_URL=https://our-story-seven-zeta.vercel.app`
+4. 把域名从 OUR STORY 项目移到 portfolio 项目
+
+详见 [portfolio/README.md](../../portfolio/README.md)。
+
+---
+
+## VPS 部署（需服务器 IP）
 
 ## 站点结构
 
 ```text
 https://www.sbhigakf215dadjwahi.xyz/
-├── /                 门户首页（选项目）
+├── /                 作品集门户（选项目）
 ├── /story/           OUR STORY 回忆馆
 ├── /game/            Shell Survivor 游戏
-└── /其他路径/         未来项目（改 projects.json 即可）
+├── /muse/            Creative Muse AI 创意引擎
+└── /housing/         郑州房价预测
 ```
 
 服务器目录对应关系：
 
 ```text
 /var/www/portal/
-├── index.html        ← deploy/portal/
+├── index.html        ← portfolio/
 ├── portal.css
 ├── portal.js
 ├── projects.json     ← 新增/下线项目只改这里
 ├── story/            ← OUR STORY 整站迁到这里
-└── game/             ← Godot Web 导出
+├── game/             ← Godot Web 导出
+├── muse/             ← Creative Muse 前端构建
+└── housing/          ← 房价预测（反向代理到 FastAPI）
 ```
 
 ---
@@ -66,6 +91,11 @@ $env:GODOT_EXE = "你的Godot.exe"
 ## 第三步：部署门户 + 游戏
 
 ```powershell
+# 推荐：从 workspace 根目录 portfolio/ 部署
+cd ..\portfolio
+.\deploy.ps1 -Host root@你的服务器IP -WithGame
+
+# 或从肉鸽项目（自动读取 portfolio/ 目录）
 .\tools\deploy_portal.ps1 -Host root@你的服务器IP
 ```
 

@@ -32,6 +32,12 @@ var last_run_relic_id: String = ""
 var readability_preset: ReadabilityPreset = ReadabilityPreset.HIGH
 ## 主菜单选择的作战地图索引（与 GameDB.MAP_TEMPLATES 对齐；章节化入口的第一步）
 var selected_map_index: int = 0
+## 单局模式：trial / standard / endurance
+var selected_run_mode: String = "standard"
+## 难度：normal / hard / nightmare
+var selected_difficulty: String = "normal"
+## 挑战契约：none / brittle / swarm / glass
+var selected_challenge: String = "none"
 ## KayKit 3D 主角（SubViewport）；关闭则回退 2D 骨架/立绘
 var use_kaykit_visual: bool = false
 const _SAVE_PATH := "user://settings.cfg"
@@ -40,6 +46,16 @@ var _load_failed_last_time := false
 
 func _ready() -> void:
 	load_settings()
+
+func _apply_first_run_mobile_web_defaults() -> void:
+	if not OS.has_feature("web"):
+		return
+	if not DisplayServer.is_touchscreen_available():
+		return
+	quality = Quality.LOW
+	reduce_particles = true
+	vfx_profile = VfxProfile.COMPETITIVE
+	extreme_perf_guard = true
 
 func set_quality(v: int) -> void:
 	if v < Quality.LOW:
@@ -147,6 +163,24 @@ func set_selected_map_index(i: int) -> void:
 		save_settings()
 
 
+func set_selected_run_mode(mode_id: String) -> void:
+	selected_run_mode = GameDB.normalize_run_mode_id(mode_id)
+	if not _loading:
+		save_settings()
+
+
+func set_selected_difficulty(diff_id: String) -> void:
+	selected_difficulty = GameDB.normalize_difficulty_id(diff_id)
+	if not _loading:
+		save_settings()
+
+
+func set_selected_challenge(challenge_id: String) -> void:
+	selected_challenge = GameDB.normalize_challenge_id(challenge_id)
+	if not _loading:
+		save_settings()
+
+
 func apply_audio_volumes() -> void:
 	_apply_audio_volumes()
 
@@ -178,6 +212,9 @@ func save_settings() -> void:
 	cfg.set_value("gameplay", "early_flow_preset", int(early_flow_preset))
 	cfg.set_value("gameplay", "readability_preset", int(readability_preset))
 	cfg.set_value("gameplay", "selected_map_index", selected_map_index)
+	cfg.set_value("gameplay", "selected_run_mode", selected_run_mode)
+	cfg.set_value("gameplay", "selected_difficulty", selected_difficulty)
+	cfg.set_value("gameplay", "selected_challenge", selected_challenge)
 	cfg.set_value("gameplay", "remember_run_loadout", remember_run_loadout)
 	cfg.set_value("gameplay", "last_run_archetype_id", last_run_archetype_id)
 	cfg.set_value("gameplay", "last_run_relic_id", last_run_relic_id)
@@ -195,6 +232,8 @@ func load_settings() -> void:
 		_load_failed_last_time = err != ERR_FILE_NOT_FOUND
 		if _load_failed_last_time:
 			push_warning("Settings: 配置读取失败，已回退默认设置 (%d)" % err)
+		elif err == ERR_FILE_NOT_FOUND:
+			_apply_first_run_mobile_web_defaults()
 		return
 	_loading = true
 	set_quality(int(cfg.get_value("gameplay", "quality", int(quality))))
@@ -212,6 +251,15 @@ func load_settings() -> void:
 	var smi := int(cfg.get_value("gameplay", "selected_map_index", selected_map_index))
 	var smax := maxi(0, GameDB.MAP_TEMPLATES.size() - 1)
 	selected_map_index = clampi(smi, 0, smax)
+	selected_run_mode = GameDB.normalize_run_mode_id(
+		String(cfg.get_value("gameplay", "selected_run_mode", selected_run_mode))
+	)
+	selected_difficulty = GameDB.normalize_difficulty_id(
+		String(cfg.get_value("gameplay", "selected_difficulty", selected_difficulty))
+	)
+	selected_challenge = GameDB.normalize_challenge_id(
+		String(cfg.get_value("gameplay", "selected_challenge", selected_challenge))
+	)
 	remember_run_loadout = bool(cfg.get_value("gameplay", "remember_run_loadout", remember_run_loadout))
 	last_run_archetype_id = String(cfg.get_value("gameplay", "last_run_archetype_id", last_run_archetype_id))
 	last_run_relic_id = String(cfg.get_value("gameplay", "last_run_relic_id", last_run_relic_id))

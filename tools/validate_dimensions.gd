@@ -59,7 +59,7 @@ func _check_main_scene() -> bool:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	var btn := main.get_node_or_null("MenuLayer/Root/Panel/StartButton")
+	var btn := main.get_node_or_null("MenuLayer/Root/Panel/Margin/VBox/StartButton")
 	if not _require(btn != null, "UI 维度：StartButton 缺失"):
 		return false
 	main.queue_free()

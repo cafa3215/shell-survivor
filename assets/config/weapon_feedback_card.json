@@ -1,4 +1,8 @@
 {
+  "kunai_hit": {
+    "min_hit_amount": 14,
+    "intensity_mul": 0.88
+  },
   "kunai_finish": {
     "intensity_mul": 1.1,
     "sfx_event": "kunai_finish"
@@ -10,6 +14,10 @@
   "lightning_jump": {
     "preset": "volt_soft",
     "intensity_mul": 0.92
+  },
+  "quantum_hex": {
+    "min_hit_amount": 16,
+    "intensity_mul": 0.86
   },
   "quantum_holy": {
     "preset": "arcane_burst",

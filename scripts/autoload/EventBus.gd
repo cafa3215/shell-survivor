@@ -43,6 +43,7 @@ signal boss_warning(strength: float, duration: float)
 signal boss_telegraph(kind: int, origin: Vector2, dir: Vector2, radius: float, duration: float)
 signal boss_defeated
 signal boss_spawned
+signal mini_boss_defeated(wave_index: int, position: Vector2)
 
 # 武器特效
 signal lightning_strike(start: Vector2, end: Vector2)

@@ -31,9 +31,9 @@ func _ready() -> void:
 	visible = true
 	_closing = false
 	_buttons = [_c1, _c2, _c3]
-	_c1.pressed.connect(func() -> void: _emit_pick(0))
-	_c2.pressed.connect(func() -> void: _emit_pick(1))
-	_c3.pressed.connect(func() -> void: _emit_pick(2))
+	InputManager.bind_instant_tap(_c1, func() -> void: _emit_pick(0))
+	InputManager.bind_instant_tap(_c2, func() -> void: _emit_pick(1))
+	InputManager.bind_instant_tap(_c3, func() -> void: _emit_pick(2))
 	for b in _buttons:
 		b.pivot_offset = b.size * 0.5
 		b.mouse_entered.connect(func() -> void: _set_card_hover(b, true))

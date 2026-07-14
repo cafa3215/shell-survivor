@@ -18,8 +18,8 @@ const REQUIRED_AUTOLOADS: PackedStringArray = [
 ]
 
 const REQUIRED_MAIN_NODES: PackedStringArray = [
-	"MenuLayer/Root/Panel/StartButton",
-	"MenuLayer/Root/Panel/QuitButton",
+	"MenuLayer/Root/Panel/Margin/VBox/StartButton",
+	"MenuLayer/Root/Panel/Margin/VBox/QuitButton",
 	"PauseLayer/PausePanel",
 	"ResultLayer/ResultPanel",
 ]

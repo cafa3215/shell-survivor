@@ -85,6 +85,14 @@ def main() -> int:
             "validate_behavior",
             [godot, "--headless", "--script", "res://tools/validate_behavior.gd"],
         ),
+        (
+            "validate_week7_qa",
+            [godot, "--headless", "--script", "res://tools/validate_week7_qa.gd"],
+        ),
+        (
+            "validate_week8_ship",
+            [godot, "--headless", "--script", "res://tools/validate_week8_ship.gd"],
+        ),
     ]
     if args.full:
         steps.append(

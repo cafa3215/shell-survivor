@@ -26,6 +26,18 @@ func bind(game: Node) -> void:
 	_game = game
 
 
+func _run_time_sec() -> float:
+	if _game != null and "run_time_seconds" in _game:
+		return float(_game.run_time_seconds)
+	return float(GameDB.run_time_for_mode())
+
+
+func _boss_time_sec() -> float:
+	if _game != null and "boss_spawn_time" in _game:
+		return float(_game.boss_spawn_time)
+	return GameDB.boss_spawn_time_for_mode()
+
+
 func tick(delta: float, elapsed: float, level: int, ended: bool, boss_spawned: bool, endless_mode: bool) -> void:
 	tick_spawn_perf_guard(delta)
 	if pressure_relief > 0.0:
@@ -61,7 +73,8 @@ func pressure_relief_summary_line() -> String:
 
 
 func maybe_threat_relief_on_kill(kind_s: String, elapsed: float) -> void:
-	if elapsed < 360.0 or elapsed > 900.0:
+	var boss_t := _boss_time_sec()
+	if elapsed < _run_time_sec() * 0.33 or elapsed > boss_t:
 		return
 	if director_mul < 1.14:
 		return
@@ -91,17 +104,22 @@ func maybe_threat_relief_on_kill(kind_s: String, elapsed: float) -> void:
 
 
 func target_enemy_count(elapsed: float, level: int, endless_mode: bool) -> int:
-	# 前 4 分钟：稀疏入场，给摸索窗口（不再维持 460+ 尸潮）
-	if not endless_mode and elapsed < 240.0:
-		if elapsed < 90.0:
-			return int(round(lerpf(8.0, 32.0, elapsed / 90.0)))
-		return int(round(lerpf(32.0, 110.0, (elapsed - 90.0) / 150.0)))
+	var run_t := _run_time_sec()
+	var early_span := run_t * 0.222
+	var ramp_end := run_t * 0.417
+	# 前段：稀疏入场，给摸索窗口
+	if not endless_mode and elapsed < ramp_end:
+		if elapsed < early_span * 0.375:
+			return int(round(lerpf(8.0, 32.0, elapsed / maxf(early_span * 0.375, 1.0))))
+		return int(round(lerpf(32.0, 110.0, (elapsed - early_span * 0.375) / maxf(ramp_end - early_span * 0.375, 1.0))))
 	var base_target := 680
-	var time_bonus := int(GameDB.director_alive_pressure_minutes(elapsed) * 95.0)
+	var time_bonus := int(GameDB.director_alive_pressure_minutes(elapsed, run_t) * 95.0)
 	var level_bonus := level * 18
 	var target := base_target + time_bonus + level_bonus - int(round(pressure_relief))
-	if elapsed >= 480.0 and elapsed <= 960.0:
-		var mid_u := clampf((elapsed - 480.0) / 480.0, 0.0, 1.0)
+	var mid_start := run_t * 0.444
+	var mid_end := run_t * 0.889
+	if elapsed >= mid_start and elapsed <= mid_end:
+		var mid_u := clampf((elapsed - mid_start) / maxf(mid_end - mid_start, 1.0), 0.0, 1.0)
 		var pl := _game.get_node_or_null("Player")
 		var hp_ratio := 1.0
 		if pl:
@@ -133,7 +151,7 @@ func spawn_perf_multiplier() -> float:
 func _endless_runtime_minutes(elapsed: float, endless_mode: bool) -> float:
 	if not endless_mode:
 		return 0.0
-	return maxf(0.0, elapsed - float(GameDB.BOSS_SPAWN_TIME)) / 60.0
+	return maxf(0.0, elapsed - _boss_time_sec()) / 60.0
 
 
 func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mode: bool) -> void:
@@ -141,11 +159,11 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 	if pl == null:
 		return
 	var player_hp_ratio := float(pl.hp) / float(pl.max_hp)
-	var level_target := int(round(GameDB.director_expected_level(elapsed)))
+	var level_target := int(round(GameDB.director_expected_level(elapsed, _run_time_sec())))
 	var behind_level: int = maxi(0, level_target - level)
 	var ahead_level: int = maxi(0, level - level_target)
 	var target := 1.0
-	var boss_t := float(GameDB.BOSS_SPAWN_TIME)
+	var boss_t := _boss_time_sec()
 	var to_boss := boss_t - elapsed
 
 	if player_hp_ratio < 0.25:
@@ -159,26 +177,28 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 	elif behind_level >= 3:
 		target -= 0.12
 
-	var u_prog := GameDB.run_progress_normalized(elapsed)
+	var u_prog := GameDB.run_progress_normalized(elapsed, _run_time_sec())
 	target += GameDB.director_time_pressure_add(u_prog)
-	if to_boss <= 180.0 and to_boss > 0.0:
-		var prep_u := clampf((180.0 - to_boss) / 180.0, 0.0, 1.0)
+	if to_boss <= _run_time_sec() * 0.167 and to_boss > 0.0:
+		var prep_u := clampf((_run_time_sec() * 0.167 - to_boss) / (_run_time_sec() * 0.167), 0.0, 1.0)
 		target -= 0.08 * prep_u
 		if behind_level >= 2:
 			target -= 0.05
-	if elapsed >= 540.0 and elapsed <= 660.0:
-		var rec_u := clampf((elapsed - 540.0) / 120.0, 0.0, 1.0)
+	var rec_start := _run_time_sec() * 0.5
+	var rec_end := _run_time_sec() * 0.611
+	if elapsed >= rec_start and elapsed <= rec_end:
+		var rec_u := clampf((elapsed - rec_start) / maxf(rec_end - rec_start, 1.0), 0.0, 1.0)
 		target -= lerpf(0.10, 0.05, rec_u)
-	if boss_spawned and not endless_mode and elapsed <= boss_t + 180.0:
-		var post_boss_u := clampf((elapsed - boss_t) / 180.0, 0.0, 1.0)
+	if boss_spawned and not endless_mode and elapsed <= boss_t + _run_time_sec() * 0.167:
+		var post_boss_u := clampf((elapsed - boss_t) / maxf(_run_time_sec() * 0.167, 1.0), 0.0, 1.0)
 		target -= 0.04 * (1.0 - post_boss_u)
 	if endless_mode:
 		target += 0.14
 	var dir_max := 1.84 if endless_mode else 1.66
 	target = clampf(target, 0.65, dir_max)
-	# 前 ~3 分钟封顶压力，避免「还没爽就扛不住」
-	if elapsed < 240.0:
-		var early_cap := lerpf(0.88, 1.06, elapsed / 240.0)
+	var early_cap_end := _run_time_sec() * 0.222
+	if elapsed < early_cap_end:
+		var early_cap := lerpf(0.88, 1.06, elapsed / maxf(early_cap_end, 1.0))
 		target = minf(target, early_cap)
 	director_mul = lerpf(director_mul, target, 0.15)
 
@@ -191,9 +211,9 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 		xp_target += 0.06
 	elif player_hp_ratio > 0.9:
 		xp_target -= 0.06
-	if to_boss <= 180.0 and to_boss > 0.0 and behind_level >= 2:
+	if to_boss <= _run_time_sec() * 0.167 and to_boss > 0.0 and behind_level >= 2:
 		xp_target += 0.06
-	if boss_spawned and not endless_mode and elapsed <= boss_t + 150.0:
+	if boss_spawned and not endless_mode and elapsed <= boss_t + _run_time_sec() * 0.139:
 		xp_target += 0.04
 	if endless_mode:
 		xp_target += 0.07
@@ -202,13 +222,14 @@ func _update_director(elapsed: float, level: int, boss_spawned: bool, endless_mo
 
 
 func _tick_director_phase_callouts(elapsed: float) -> void:
-	if elapsed < 150.0:
+	var run_t := _run_time_sec()
+	if elapsed < run_t * 0.139:
 		return
 	var checkpoints := [
-		["phase_3m", 180.0, "导演换挡：远程与重装混编开始抬头，别只顾清杂兵。", "warning"],
-		["phase_6m", 360.0, "中盘升压：召唤师与冲锋者登场，优先击杀高威胁单位。", "warning"],
-		["phase_8m_windup", 480.0, "读场提示：脚下橙色蓄力圈 = 即将攻击，先躲再输出。", "info"],
-		["phase_9m", 540.0, "高压阶段：场面会更乱，构筑若未成型请优先保命。", "error"],
+		["phase_3m", run_t * 0.167, "导演换挡：远程与重装混编开始抬头，别只顾清杂兵。", "warning"],
+		["phase_6m", run_t * 0.333, "中盘升压：召唤师与冲锋者登场，优先击杀高威胁单位。", "warning"],
+		["phase_8m_windup", run_t * 0.444, "读场提示：脚下橙色蓄力圈 = 即将攻击，先躲再输出。", "info"],
+		["phase_9m", run_t * 0.5, "高压阶段：场面会更乱，构筑若未成型请优先保命。", "error"],
 	]
 	for row in checkpoints:
 		var id := String(row[0])

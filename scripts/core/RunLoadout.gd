@@ -31,6 +31,7 @@ var _post_relic_run_sealed := false
 var _curse_slow_rem := 0.0
 var _curse_weak_rem := 0.0
 var _curse_no_pickup_rem := 0.0
+var cursed_this_run := false
 
 var _game: Node = null
 
@@ -46,7 +47,38 @@ func cmdline_headless() -> bool:
 	return false
 
 
+func _try_apply_remembered_loadout() -> bool:
+	if cmdline_headless():
+		return false
+	if not Settings.remember_run_loadout:
+		return false
+	var arch := Settings.last_run_archetype_id
+	var relic := Settings.last_run_relic_id
+	if arch.is_empty() or not RUN_ARCHETYPES.has(arch):
+		return false
+	if relic.is_empty() or not GameDB.RUN_RELICS.has(relic):
+		return false
+	if not MetaProgress.is_run_relic_unlocked_for_pool(relic):
+		return false
+	apply_chosen_archetype(arch)
+	apply_chosen_relic(relic)
+	finish_run_start_after_relic()
+	return true
+
+
+func _persist_loadout_to_settings() -> void:
+	if not Settings.remember_run_loadout:
+		return
+	if not run_archetype_id.is_empty():
+		Settings.last_run_archetype_id = run_archetype_id
+	if not run_relic_id.is_empty():
+		Settings.last_run_relic_id = run_relic_id
+	Settings.save_settings()
+
+
 func begin_archetype_pick_sequence() -> void:
+	if _try_apply_remembered_loadout():
+		return
 	var options := _build_archetype_options()
 	if options.is_empty():
 		begin_relic_pick_sequence()
@@ -134,6 +166,27 @@ func apply_chosen_archetype(archetype_id: String) -> void:
 		NotificationSystem.notify_message("已选择角色专精：" + n, 2.0, "success")
 
 
+func apply_archetype_start_bonuses() -> void:
+	if run_archetype_id.is_empty():
+		return
+	var ws: Node = _game.get_node_or_null("WeaponSystem")
+	var ss: Node = _game.get_node_or_null("SkillSystem")
+	match run_archetype_id:
+		"assault":
+			if ws and "level_map" in ws:
+				ws.level_map["kunai"] = maxi(2, int(ws.level_map.get("kunai", 0)))
+		"guardian":
+			if ss and "passive_levels" in ss:
+				ss.passive_levels["damage_reduction"] = maxi(1, int(ss.passive_levels.get("damage_reduction", 0)))
+				if ss.has_method("_recalc"):
+					ss.call("_recalc")
+		"hunter":
+			if ss and "passive_levels" in ss:
+				ss.passive_levels["crit_chance"] = maxi(1, int(ss.passive_levels.get("crit_chance", 0)))
+				if ss.has_method("_recalc"):
+					ss.call("_recalc")
+
+
 func begin_relic_pick_sequence() -> void:
 	var pool := _build_unlocked_relic_pool()
 	if pool.is_empty():
@@ -206,6 +259,8 @@ func finish_run_start_after_relic() -> void:
 	if _post_relic_run_sealed:
 		return
 	_post_relic_run_sealed = true
+	apply_archetype_start_bonuses()
+	_persist_loadout_to_settings()
 	EventBus.game_started.emit()
 	_game.call_deferred("_deferred_run_opening_tip")
 
@@ -221,6 +276,7 @@ func tick_curses(delta: float) -> void:
 
 func apply_world_curse(kind: String, duration_sec: float) -> void:
 	var d := maxf(duration_sec, 0.05)
+	cursed_this_run = true
 	match kind:
 		"slow":
 			_curse_slow_rem = maxf(_curse_slow_rem, d)

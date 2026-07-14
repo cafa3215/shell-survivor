@@ -30,6 +30,7 @@ var _beam_core: Line2D = null
 var _cast_seq := 0
 var _bind_retry_left := 0.0
 var _bind_warned := false
+var _touch_hold := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_INHERIT
@@ -82,6 +83,7 @@ func _bind_game() -> void:
 		push_warning("ActiveSkillManager: Game 未找到，将在对局中重试绑定")
 
 func _unbind_game() -> void:
+	_touch_hold = false
 	_laser_firing = false
 	_laser_tick_left = 0.0
 	_laser_sfx_cd = 0.0
@@ -143,6 +145,7 @@ func _process(delta: float) -> void:
 			_bind_game()
 		return
 	if get_tree().paused:
+		_touch_hold = false
 		_stop_laser_visual_only()
 		cooldown_visual_changed.emit(_cooldown_left, COOLDOWN_SEC, false)
 		return
@@ -190,12 +193,28 @@ func _get_mouse_world() -> Vector2:
 		return _player.global_position
 	return vp.get_canvas_transform().affine_inverse() * vp.get_mouse_position()
 
+func _get_beam_target_world() -> Vector2:
+	if _player == null or not is_instance_valid(_player):
+		return Vector2.ZERO
+	var from: Vector2 = _player.global_position
+	if InputManager.is_touch_ui():
+		if InputManager.aim_active and InputManager.aim_vector.length_squared() > 0.01:
+			return from + InputManager.aim_vector.normalized() * PIERCE_RANGE
+		if _game:
+			var em := _game.get_node_or_null("EnemyManager")
+			if em and em.has_method("get_closest_enemy_pos"):
+				var nearest: Variant = em.call("get_closest_enemy_pos", from, PIERCE_RANGE)
+				if nearest is Vector2:
+					return nearest
+		return from + Vector2.RIGHT * PIERCE_RANGE
+	return _get_mouse_world()
+
 func _beam_endpoints() -> Array[Vector2]:
 	var out: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO]
 	if _player == null:
 		return out
 	var from: Vector2 = _player.global_position
-	var target := _get_mouse_world()
+	var target := _get_beam_target_world()
 	var dir := target - from
 	var to: Vector2
 	if dir.length_squared() < 4.0:
@@ -282,7 +301,13 @@ func is_bound() -> bool:
 	return _game != null and is_instance_valid(_game) and _player != null and is_instance_valid(_player)
 
 
+func set_touch_hold(active: bool) -> void:
+	_touch_hold = active
+
+
 func _is_active_skill_pressed() -> bool:
+	if _touch_hold:
+		return true
 	if Input.is_action_pressed("active_skill"):
 		return true
 	if Input.is_physical_key_pressed(KEY_R):

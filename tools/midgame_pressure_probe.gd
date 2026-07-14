@@ -46,7 +46,7 @@ func _run_once(run_no: int) -> Dictionary:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	var start_btn := main.get_node_or_null("MenuLayer/Root/Panel/StartButton") as Button
+	var start_btn := main.get_node_or_null("MenuLayer/Root/Panel/Margin/VBox/StartButton") as Button
 	if start_btn == null:
 		push_error("midgame_probe: StartButton missing")
 		main.queue_free()

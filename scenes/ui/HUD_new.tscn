@@ -32,7 +32,7 @@ theme_type_variation = &"PanelCard"
 theme_type_variation = &"PanelCard"
 
 [node name="HpIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
-text = "❤"
+text = "血"
 theme_type_variation = &"LabelMeta"
 vertical_alignment = 1
 
@@ -45,7 +45,7 @@ vertical_alignment = 1
 custom_minimum_size = Vector2(20, 0)
 
 [node name="LvIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
-text = "★"
+text = "级"
 theme_type_variation = &"LabelMeta"
 vertical_alignment = 1
 
@@ -58,7 +58,7 @@ vertical_alignment = 1
 custom_minimum_size = Vector2(20, 0)
 
 [node name="TimeIcon" type="Label" parent="Root/TopBar/VBox/Row1"]
-text = "⏱"
+text = "时"
 theme_type_variation = &"LabelMeta"
 vertical_alignment = 1
 
@@ -147,7 +147,7 @@ vertical_alignment = 1
 size_flags_horizontal = 3
 
 [node name="EnemyIcon" type="Label" parent="Root/TopBar/VBox/Row3"]
-text = "👾"
+text = "敌"
 theme_type_variation = &"LabelMeta"
 vertical_alignment = 1
 
@@ -202,7 +202,7 @@ theme_type_variation = &"PanelCard"
 theme_type_variation = &"PanelCard"
 
 [node name="BossIcon" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
-text = "💀"
+text = "首"
 theme_type_variation = &"LabelMeta"
 
 [node name="BossLabel" type="Label" parent="Root/BossContainer/VBox/BossTitle"]
@@ -257,7 +257,7 @@ offset_left = -132.0
 offset_top = 10.0
 offset_right = -16.0
 offset_bottom = 54.0
-text = "📦 装备"
+text = "装备"
 theme_type_variation = &"ButtonSecondary"
 
 [node name="DashButton" type="Button" parent="Root"]
@@ -269,7 +269,7 @@ offset_left = -252.0
 offset_top = 10.0
 offset_right = -136.0
 offset_bottom = 54.0
-text = "⚡ 冲刺"
+text = "冲刺"
 theme_type_variation = &"ButtonPrimary"
 
 [node name="PauseButton" type="Button" parent="Root"]
@@ -281,17 +281,17 @@ offset_left = -372.0
 offset_top = 10.0
 offset_right = -256.0
 offset_bottom = 54.0
-text = "⏸ 暂停"
+text = "暂停"
 theme_type_variation = &"ButtonSecondary"
 
 [node name="JoystickRoot" type="Control" parent="Root"]
+layout_mode = 0
 anchors_preset = 0
-offset_left = 20.0
-offset_top = 420.0
-offset_right = 220.0
-offset_bottom = 620.0
+offset_left = 8.0
+offset_top = 878.0
+offset_right = 188.0
+offset_bottom = 1058.0
 mouse_filter = 1
-theme_type_variation = &"PanelCard"
 
 [node name="Base" type="Panel" parent="Root/JoystickRoot"]
 anchors_preset = 8
@@ -303,7 +303,6 @@ offset_left = -70.0
 offset_top = -70.0
 offset_right = 70.0
 offset_bottom = 70.0
-theme_type_variation = &"PanelCard"
 
 [node name="Knob" type="Panel" parent="Root/JoystickRoot"]
 anchors_preset = 8
@@ -315,7 +314,6 @@ offset_left = -28.0
 offset_top = -28.0
 offset_right = 28.0
 offset_bottom = 28.0
-theme_type_variation = &"PanelCard"
 
 [node name="AimZone" type="Control" parent="Root"]
 anchors_preset = 0
@@ -349,7 +347,7 @@ visible = false
 theme_type_variation = &"PanelBadge"
 
 [node name="Label" type="Label" parent="Root/EndlessBadge"]
-text = "∞ 无尽模式"
+text = "无尽模式"
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_type_variation = &"LabelMeta"
@@ -385,28 +383,49 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -140.0
-offset_top = -112.0
+offset_left = -88.0
+offset_top = -34.0
 offset_right = -10.0
 offset_bottom = -10.0
 grow_horizontal = 0
 grow_vertical = 0
-theme_type_variation = &"PanelCard"
+theme_type_variation = &"PanelBadge"
 
-[node name="VBox" type="VBoxContainer" parent="Root/ActiveSkillPanel"]
+[node name="HBox" type="HBoxContainer" parent="Root/ActiveSkillPanel"]
 layout_mode = 2
+theme_override_constants/separation = 5
 
-[node name="HintLabel" type="Label" parent="Root/ActiveSkillPanel/VBox"]
+[node name="KeyLabel" type="Label" parent="Root/ActiveSkillPanel/HBox"]
+custom_minimum_size = Vector2(16, 0)
 layout_mode = 2
-text = "按住 R / 右键"
-horizontal_alignment = 2
+text = "R"
+horizontal_alignment = 1
+vertical_alignment = 1
 theme_type_variation = &"LabelMeta"
 
-[node name="CooldownBar" type="ProgressBar" parent="Root/ActiveSkillPanel/VBox"]
-custom_minimum_size = Vector2(118, 14)
+[node name="CooldownBar" type="ProgressBar" parent="Root/ActiveSkillPanel/HBox"]
+custom_minimum_size = Vector2(52, 6)
 layout_mode = 2
+size_flags_vertical = 4
 min_value = 0.0
 max_value = 100.0
 value = 100.0
 show_percentage = false
 theme_type_variation = &"BarXp"
+
+[node name="ActiveSkillButton" type="Button" parent="Root"]
+visible = false
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -128.0
+offset_top = -72.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "激光"
+theme_type_variation = &"ButtonPrimary"

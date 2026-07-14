@@ -14,6 +14,8 @@ var experience_system: Node
 var _event_timers: Dictionary = {}
 var _active_events: Array[Dictionary] = []
 var _spawn_center := Vector2.ZERO
+## 地图规则偏置：spawn_interval 倍率（雨巷等）
+var _interval_scale: Dictionary = {}
 
 # 事件可视化
 var _event_marks: Array[Dictionary] = []
@@ -28,15 +30,40 @@ func _ready() -> void:
 	# 延迟初始化，等待其他系统就绪
 	call_deferred("_delayed_init")
 
+func set_event_interval_scales(scales: Dictionary) -> void:
+	_interval_scale.clear()
+	for k in scales.keys():
+		_interval_scale[String(k)] = maxf(0.25, float(scales[k]))
+	# 若计时器已开跑，按新间隔钳制剩余时间
+	for event_type in _event_timers.keys():
+		_event_timers[event_type] = minf(float(_event_timers[event_type]), _event_interval(event_type))
+
+func _event_interval(event_type: String) -> float:
+	var base := float(GameDB.EVENT_TYPES[event_type]["spawn_interval"])
+	return base * float(_interval_scale.get(event_type, 1.0))
+
+func _pull_map_event_bias_from_game() -> void:
+	var g := get_parent()
+	if g == null:
+		return
+	var rule_v: Variant = g.get("_map_rule")
+	if typeof(rule_v) != TYPE_DICTIONARY:
+		return
+	var rule: Dictionary = rule_v as Dictionary
+	if String(rule.get("id", "")) != "event_bias":
+		return
+	set_event_interval_scales(rule.get("interval_mul", {}) as Dictionary)
+
 func _delayed_init() -> void:
 	player = get_parent().get_node("Player")
 	weapon_system = get_parent().get_node("WeaponSystem")
 	skill_system = get_parent().get_node("SkillSystem")
 	experience_system = get_parent().get_node_or_null("ExperienceSystem")
+	_pull_map_event_bias_from_game()
 	
 	# 首次刷新略提前，避免开局「干刷怪」太久（吸引力 / 目标感）
 	for event_type in GameDB.EVENT_TYPES.keys():
-		_event_timers[event_type] = randf_range(22.0, 58.0)
+		_event_timers[event_type] = randf_range(22.0, 58.0) * float(_interval_scale.get(event_type, 1.0))
 
 func _process(delta: float) -> void:
 	if player == null:
@@ -51,7 +78,7 @@ func _process(delta: float) -> void:
 	for event_type in _event_timers.keys():
 		_event_timers[event_type] -= eff_delta
 		if _event_timers[event_type] <= 0.0:
-			_event_timers[event_type] = float(GameDB.EVENT_TYPES[event_type]["spawn_interval"])
+			_event_timers[event_type] = _event_interval(event_type)
 			_spawn_event(event_type)
 	
 	# 检查事件收集

@@ -23,7 +23,12 @@ $ErrorActionPreference = "Stop"
 $repo = Resolve-Path (Join-Path $PSScriptRoot "..")
 
 if ([string]::IsNullOrWhiteSpace($PortalDir)) {
-    $PortalDir = Join-Path $repo "deploy\portal"
+    $workspacePortal = Join-Path (Split-Path $repo -Parent) "portfolio"
+    if (Test-Path (Join-Path $workspacePortal "index.html")) {
+        $PortalDir = $workspacePortal
+    } else {
+        $PortalDir = Join-Path $repo "deploy\portal"
+    }
 }
 if ([string]::IsNullOrWhiteSpace($GameDir)) {
     $GameDir = Join-Path $repo "build\web\game"

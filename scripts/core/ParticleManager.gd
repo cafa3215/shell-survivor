@@ -30,6 +30,10 @@ var _active_particles: Array[GPUParticles2D] = []
 var _max_pool_per_type := 10
 var _particle_tex_cache: Dictionary = {}
 var _fallback_circle_particle_tex: Texture2D
+var _runtime_overload_mul := 1.0
+
+func set_runtime_overload_mul(v: float) -> void:
+	_runtime_overload_mul = clampf(v, 0.55, 1.0)
 
 func _ready() -> void:
 	_create_particle_materials()
@@ -101,24 +105,26 @@ func _create_hit_material() -> GPUParticles2D:
 	var particles := GPUParticles2D.new()
 	particles.emitting = false
 	particles.one_shot = true
-	particles.explosiveness = 0.85
-	particles.amount = 14
-	particles.lifetime = 0.28
-	particles.speed_scale = 1.65
+	particles.explosiveness = 0.88
+	particles.amount = 18
+	particles.lifetime = 0.32
+	particles.speed_scale = 1.55
 	
 	var mat := ParticleProcessMaterial.new()
 	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_POINT
 	mat.direction = Vector3(0, -1, 0)
-	mat.spread = 88.0
-	mat.initial_velocity_min = 75.0
-	mat.initial_velocity_max = 155.0
-	mat.gravity = Vector3(0, 220, 0)
-	mat.scale_min = 1.1
-	mat.scale_max = 3.0
-	mat.angular_velocity_min = -7.0
-	mat.angular_velocity_max = 7.0
+	mat.spread = 72.0
+	mat.initial_velocity_min = 85.0
+	mat.initial_velocity_max = 175.0
+	mat.gravity = Vector3(0, 240, 0)
+	mat.scale_min = 1.2
+	mat.scale_max = 3.4
+	mat.angular_velocity_min = -9.0
+	mat.angular_velocity_max = 9.0
+	mat.damping_min = 40.0
+	mat.damping_max = 80.0
 	mat.color = Color(0.92, 0.35, 0.12, 0.78)
-	mat.color_ramp = _create_color_ramp(Color(0.8, 0.4, 0.2), Color(0.4, 0.08, 0.0))
+	mat.color_ramp = _create_splatter_ramp(Color(1.0, 0.92, 0.72, 0.95), Color(0.72, 0.18, 0.08, 0.85), Color(0.28, 0.05, 0.02, 0.0))
 	
 	particles.process_material = mat
 	particles.texture = _load_particle_texture("spark_shard")
@@ -271,6 +277,17 @@ func _create_magic_prismatic_ramp() -> GradientTexture1D:
 	tex.gradient = gradient
 	return tex
 
+func _create_splatter_ramp(highlight: Color, mid: Color, fade: Color) -> GradientTexture1D:
+	var gradient: Gradient = Gradient.new()
+	gradient.set_color(0, highlight)
+	gradient.add_point(0.28, mid)
+	gradient.add_point(0.62, mid.lerp(fade, 0.45))
+	gradient.set_color(1, fade)
+	var tex: GradientTexture1D = GradientTexture1D.new()
+	tex.gradient = gradient
+	return tex
+
+
 func _create_color_ramp(start_color: Color, end_color: Color) -> GradientTexture1D:
 	var gradient: Gradient = Gradient.new()
 	gradient.set_color(0, start_color)
@@ -282,6 +299,21 @@ func _create_color_ramp(start_color: Color, end_color: Color) -> GradientTexture
 
 func spawn_particles(type: ParticleType, position: Vector2, duration := -1.0, modulate: Color = Color.WHITE) -> GPUParticles2D:
 	# R8/R6：减少粒子 = 入口节流；依类型做不同保留率，保留“关键记忆点”
+	var overload_skip := false
+	if _runtime_overload_mul < 0.98:
+		var skip_keep := 1.0
+		match type:
+			ParticleType.LEVEL_UP, ParticleType.EXPLOSION, ParticleType.SHOCKWAVE_RING:
+				skip_keep = 0.82
+			ParticleType.KUNAI_GLINT, ParticleType.MAGIC_BURST:
+				skip_keep = 0.62
+			ParticleType.BLOOD_HIT, ParticleType.LIGHTNING_SPARK, ParticleType.SMOKE:
+				skip_keep = 0.48
+			_:
+				skip_keep = 0.55
+		skip_keep *= _runtime_overload_mul
+		if randf() > skip_keep:
+			overload_skip = true
 	if Settings.reduce_particles:
 		var keep := 1.0
 		match type:
@@ -301,6 +333,8 @@ func spawn_particles(type: ParticleType, position: Vector2, duration := -1.0, mo
 				keep = 0.5
 		if randf() > keep:
 			return null
+	if overload_skip:
+		return null
 	var particles: GPUParticles2D
 	
 	# 从对象池获取
@@ -352,7 +386,60 @@ func explosion(pos: Vector2, tint: Color = Color.WHITE) -> void:
 	spawn_particles(ParticleType.EXPLOSION, pos, -1.0, tint)
 
 func hit_effect(pos: Vector2, tint: Color = Color.WHITE) -> void:
-	spawn_particles(ParticleType.BLOOD_HIT, pos, -1.0, tint)
+	splatter_hit(pos, tint, Vector2.ZERO)
+
+
+func splatter_hit(pos: Vector2, tint: Color = Color.WHITE, dir: Vector2 = Vector2.ZERO) -> void:
+	var p := spawn_particles(ParticleType.BLOOD_HIT, pos, -1.0, tint)
+	if p == null:
+		return
+	var mat := p.process_material as ParticleProcessMaterial
+	if mat == null:
+		return
+	var emit_dir := dir
+	if emit_dir.length_squared() < 0.01:
+		emit_dir = Vector2.from_angle(randf() * TAU)
+	emit_dir = emit_dir.normalized()
+	mat.direction = Vector3(emit_dir.x, emit_dir.y, 0.0)
+	mat.spread = 48.0 if dir.length_squared() > 0.01 else 78.0
+	var hi := tint.lerp(Color(1.0, 0.95, 0.82, 1.0), 0.35)
+	var mid := tint.lerp(tint.darkened(0.25), 0.5)
+	var fade := tint.darkened(0.55)
+	fade.a = 0.0
+	mat.color_ramp = _create_splatter_ramp(hi, mid, fade)
+
+
+func impact_splash(pos: Vector2, tint: Color = Color.WHITE, dir: Vector2 = Vector2.ZERO, intensity: float = 1.0, brief: bool = false) -> void:
+	if not is_inside_tree():
+		splatter_hit(pos, tint, dir)
+		return
+	var d := dir
+	if d.length_squared() < 0.01:
+		d = Vector2.from_angle(randf() * TAU)
+	else:
+		d = d.normalized()
+	var hi := clampf(intensity, 0.6, 1.8)
+	if brief or _runtime_overload_mul < 0.9:
+		splatter_hit(pos, tint, d)
+		return
+	var core := Color(tint.r, tint.g, tint.b, 0.88).lerp(Color.WHITE, 0.22)
+	shockwave_ring(pos, core)
+	splatter_hit(pos, tint, d)
+	var tree := get_tree()
+	if tree == null:
+		return
+	tree.create_timer(0.045 / hi).timeout.connect(func() -> void:
+		if not is_instance_valid(self):
+			return
+		splatter_hit(pos, tint.lerp(tint.darkened(0.22), 0.4), d.rotated(randf_range(-0.55, 0.55)))
+	, CONNECT_ONE_SHOT)
+	tree.create_timer(0.11 / hi).timeout.connect(func() -> void:
+		if not is_instance_valid(self):
+			return
+		shockwave_ring(pos, Color(tint.r, tint.g, tint.b, 0.52))
+		if hi >= 1.1 and randf() < 0.55:
+			lightning_spark(pos, tint.lerp(Color.WHITE, 0.32))
+	, CONNECT_ONE_SHOT)
 
 func fire_burn(pos: Vector2, duration: float) -> void:
 	var p := spawn_particles(ParticleType.FIRE_BURN, pos, duration)
@@ -406,8 +493,11 @@ func _make_particle_texture() -> Texture2D:
 			var dy := float(y) - center
 			var d := sqrt(dx * dx + dy * dy)
 			if d <= radius:
-				var alpha := pow(1.0 - d / radius, 1.5)
-				img.set_pixel(x, y, Color(1.0, 1.0, 1.0, alpha))
+				var core := pow(1.0 - d / radius, 2.2)
+				var rim := pow(maxf(0.0, 1.0 - absf(d - radius * 0.62) / (radius * 0.38)), 1.4) * 0.35
+				var alpha := clampf(core * 0.92 + rim, 0.0, 1.0)
+				var warm := 1.0 - d / radius * 0.18
+				img.set_pixel(x, y, Color(warm, warm, warm, alpha))
 	return ImageTexture.create_from_image(img)
 
 # ============================================

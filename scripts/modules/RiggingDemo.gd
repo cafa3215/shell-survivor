@@ -59,22 +59,22 @@ func _process(delta: float) -> void:
 	var t := fposmod(_phase, 10.0)
 	if t < 2.5:
 		_rig.set_form(PlayerBodyRig.RigForm.BASE)
-		_rig.apply_visual_state(delta, Vector2.ZERO, false, false, false, Vector2.ZERO, 1.0)
+		_rig.apply_visual_state(delta, Vector2.ZERO, false, 0.0, 0.0, Vector2.ZERO, 1.0)
 		_status.text = "状态：待机呼吸与微动"
 	elif t < 5.0:
 		_rig.set_form(PlayerBodyRig.RigForm.BASE)
-		_rig.apply_visual_state(delta, Vector2(220, 40), false, false, false, Vector2.ZERO, 1.0)
+		_rig.apply_visual_state(delta, Vector2(220, 40), false, 0.0, 0.0, Vector2.ZERO, 1.0)
 		_status.text = "状态：跑动摆臂与重心倾斜"
 	elif t < 7.0:
 		_rig.set_form(PlayerBodyRig.RigForm.BASE)
 		var aim := Vector2(1.0, -0.15)
-		_rig.apply_visual_state(delta, Vector2.ZERO, false, false, true, aim, 1.0)
+		_rig.apply_visual_state(delta, Vector2.ZERO, false, 0.0, 1.0, aim, 1.0)
 		_status.text = "状态：瞄准抬臂（右手前伸）"
 	elif t < 8.5:
 		_rig.set_form(PlayerBodyRig.RigForm.BASE)
-		_rig.apply_visual_state(delta, Vector2(40, 0), false, true, false, Vector2.ZERO, 1.0)
+		_rig.apply_visual_state(delta, Vector2(40, 0), false, 1.0, 0.0, Vector2.ZERO, 1.0)
 		_status.text = "状态：受击后仰"
 	else:
 		_rig.set_form(PlayerBodyRig.RigForm.AWAKENED)
-		_rig.apply_visual_state(delta, Vector2(160, -20), false, false, false, Vector2.ZERO, -1.0)
+		_rig.apply_visual_state(delta, Vector2(160, -20), false, 0.0, 0.0, Vector2.ZERO, -1.0)
 		_status.text = "状态：觉醒形态 + 反向跑动镜像"

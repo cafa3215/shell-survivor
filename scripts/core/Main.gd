@@ -33,16 +33,38 @@ func _ready() -> void:
 	EventBus.toggle_pause_requested.connect(_on_toggle_pause_requested)
 	EventBus.upgrade_ui_state_changed.connect(_on_upgrade_ui_state_changed)
 	_bind_buttons()
+	_configure_menu_input_layers()
 	RunStats.reset()
 	_init_settings_ui()
 	_setup_menu_extras()
+	call_deferred("_deferred_apply_ui_font")
+	call_deferred("_relayout_menu_panel")
+	if not get_viewport().size_changed.is_connected(_relayout_menu_panel):
+		get_viewport().size_changed.connect(_relayout_menu_panel)
 	_show_menu(true)
 	_show_pause(false)
 	_show_result(false)
 
+func _deferred_apply_ui_font() -> void:
+	if UiFont:
+		UiFont.patch_control_tree(self)
+		if menu_layer:
+			UiFont.patch_control_tree(menu_layer)
+
+
+func _configure_menu_input_layers() -> void:
+	for node_name in ["AnimatedBg", "BgGlow1", "BgGlow2"]:
+		var node := menu_layer.get_node_or_null(node_name)
+		if node is Control:
+			(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var root := menu_layer.get_node_or_null("Root") as Control
+	if root:
+		root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
 func _bind_buttons() -> void:
-	$MenuLayer/Root/Panel/StartButton.pressed.connect(_start_game)
-	$MenuLayer/Root/Panel/QuitButton.pressed.connect(func(): get_tree().quit())
+	InputManager.bind_instant_tap($MenuLayer/Root/Panel/Margin/VBox/StartButton, _start_game)
+	InputManager.bind_instant_tap($MenuLayer/Root/Panel/Margin/VBox/QuitButton, func(): get_tree().quit())
 	# 美化版暂停面板信号连接
 	$PauseLayer/PausePanel.resume_pressed.connect(_resume_game)
 	$PauseLayer/PausePanel.restart_pressed.connect(_restart_game)
@@ -52,7 +74,7 @@ func _bind_buttons() -> void:
 	$ResultLayer/ResultPanel.menu_pressed.connect(_back_to_menu)
 
 func _init_settings_ui() -> void:
-	var q: OptionButton = $MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/QualityRow/Quality as OptionButton
+	var q: OptionButton = $MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/QualityRow/Quality as OptionButton
 	q.clear()
 	q.add_item("低", Settings.Quality.LOW)
 	q.add_item("中", Settings.Quality.MEDIUM)
@@ -67,8 +89,8 @@ func _init_settings_ui() -> void:
 		Settings.set_quality(q.get_selected_id())
 	)
 	# 音量控制
-	var sfx_slider: HSlider = $MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/SfxRow/SfxSlider as HSlider
-	var music_slider: HSlider = $MenuLayer/Root/Panel/SettingsScroll/SettingsContainer/MusicRow/MusicSlider as HSlider
+	var sfx_slider: HSlider = $MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/SfxRow/SfxSlider as HSlider
+	var music_slider: HSlider = $MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer/MusicRow/MusicSlider as HSlider
 	if sfx_slider:
 		sfx_slider.value = Settings.sfx_volume * 100.0
 		sfx_slider.value_changed.connect(func(v: float):
@@ -79,7 +101,7 @@ func _init_settings_ui() -> void:
 		music_slider.value_changed.connect(func(v: float):
 			Settings.set_music_volume(v / 100.0)
 		)
-	var sc := $MenuLayer/Root/Panel/SettingsScroll/SettingsContainer as VBoxContainer
+	var sc := $MenuLayer/Root/Panel/Margin/VBox/SettingsScroll/SettingsContainer as VBoxContainer
 	if sc:
 		var map_row := HBoxContainer.new()
 		map_row.name = "MapRow"
@@ -95,7 +117,8 @@ func _init_settings_ui() -> void:
 		for i in GameDB.MAP_TEMPLATES.size():
 			var tpl: Dictionary = GameDB.MAP_TEMPLATES[i]
 			var t := String(tpl.get("title", tpl.get("id", "地图 %d" % i)))
-			map_opt.add_item(t, i)
+			var stars := MetaProgress.get_map_stars(i)
+			map_opt.add_item("%s · %s" % [t, GameDB.map_mastery_stars_text(stars)], i)
 		_map_select_opt = map_opt
 		_refresh_map_unlock_ui()
 		map_opt.item_selected.connect(func(_idx: int) -> void:
@@ -104,6 +127,106 @@ func _init_settings_ui() -> void:
 		map_row.add_child(map_opt)
 		sc.add_child(map_row)
 		sc.move_child(map_row, 0)
+		var mode_row := HBoxContainer.new()
+		mode_row.name = "RunModeRow"
+		var mode_label := Label.new()
+		mode_label.text = "单局模式"
+		mode_label.custom_minimum_size = Vector2(120, 0)
+		mode_label.theme_type_variation = &"Label.Body"
+		mode_row.add_child(mode_label)
+		var mode_opt := OptionButton.new()
+		mode_opt.name = "RunModeSelect"
+		mode_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mode_opt.theme_type_variation = &"Input.Select"
+		var mode_ids: Array[String] = []
+		for mode_id in GameDB.RUN_MODES.keys():
+			var mid := String(mode_id)
+			if GameDB.is_demo_build() and mid != "trial":
+				continue
+			var mode_cfg: Dictionary = GameDB.RUN_MODES[mode_id]
+			mode_ids.append(mid)
+			mode_opt.add_item(String(mode_cfg.get("label", mid)))
+		if GameDB.is_demo_build():
+			Settings.set_selected_run_mode("trial")
+		var mode_sel := 0
+		for mi in mode_ids.size():
+			if mode_ids[mi] == Settings.selected_run_mode:
+				mode_sel = mi
+				break
+		mode_opt.select(mode_sel)
+		mode_opt.disabled = GameDB.is_demo_build()
+		mode_opt.item_selected.connect(func(idx: int) -> void:
+			if GameDB.is_demo_build():
+				Settings.set_selected_run_mode("trial")
+				return
+			if idx >= 0 and idx < mode_ids.size():
+				Settings.set_selected_run_mode(mode_ids[idx])
+		)
+		mode_row.add_child(mode_opt)
+		sc.add_child(mode_row)
+		sc.move_child(mode_row, 0)
+		var diff_row := HBoxContainer.new()
+		diff_row.name = "DifficultyRow"
+		var diff_label := Label.new()
+		diff_label.text = "难度"
+		diff_label.custom_minimum_size = Vector2(120, 0)
+		diff_label.theme_type_variation = &"Label.Body"
+		diff_row.add_child(diff_label)
+		var diff_opt := OptionButton.new()
+		diff_opt.name = "DifficultySelect"
+		diff_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		diff_opt.theme_type_variation = &"Input.Select"
+		var diff_ids: Array[String] = []
+		for did in GameDB.DIFFICULTY_TIERS.keys():
+			var dcfg: Dictionary = GameDB.DIFFICULTY_TIERS[did]
+			diff_ids.append(String(did))
+			diff_opt.add_item(String(dcfg.get("label", did)))
+		var diff_sel := 0
+		for di in diff_ids.size():
+			if diff_ids[di] == Settings.selected_difficulty:
+				diff_sel = di
+				break
+		diff_opt.select(diff_sel)
+		diff_opt.item_selected.connect(func(idx: int) -> void:
+			if idx >= 0 and idx < diff_ids.size():
+				Settings.set_selected_difficulty(diff_ids[idx])
+		)
+		diff_row.add_child(diff_opt)
+		sc.add_child(diff_row)
+		sc.move_child(diff_row, 0)
+		var chal_row := HBoxContainer.new()
+		chal_row.name = "ChallengeRow"
+		var chal_label := Label.new()
+		chal_label.text = "挑战契约"
+		chal_label.custom_minimum_size = Vector2(120, 0)
+		chal_label.theme_type_variation = &"Label.Body"
+		chal_row.add_child(chal_label)
+		var chal_opt := OptionButton.new()
+		chal_opt.name = "ChallengeSelect"
+		chal_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		chal_opt.theme_type_variation = &"Input.Select"
+		var chal_ids: Array[String] = []
+		for cid in GameDB.CHALLENGE_CONTRACTS.keys():
+			var ccfg: Dictionary = GameDB.CHALLENGE_CONTRACTS[cid]
+			chal_ids.append(String(cid))
+			var scrap_m := float(ccfg.get("scrap_mul", 1.0))
+			var label := String(ccfg.get("label", cid))
+			if scrap_m > 1.01:
+				label += " (×%.2f 碎片)" % scrap_m
+			chal_opt.add_item(label)
+		var chal_sel := 0
+		for ci in chal_ids.size():
+			if chal_ids[ci] == Settings.selected_challenge:
+				chal_sel = ci
+				break
+		chal_opt.select(chal_sel)
+		chal_opt.item_selected.connect(func(idx: int) -> void:
+			if idx >= 0 and idx < chal_ids.size():
+				Settings.set_selected_challenge(chal_ids[idx])
+		)
+		chal_row.add_child(chal_opt)
+		sc.add_child(chal_row)
+		sc.move_child(chal_row, 0)
 		var vfx_row := HBoxContainer.new()
 		vfx_row.name = "VfxProfileRow"
 		var vfx_label := Label.new()
@@ -371,22 +494,38 @@ func _on_game_over(win: bool) -> void:
 	var cleared_map := 0
 	if _game != null:
 		cleared_map = clampi(int(_game.get("map_index")), 0, maxi(0, GameDB.MAP_TEMPLATES.size() - 1))
-	var meta_end: Dictionary = MetaProgress.record_run_ended(win, RunStats.runtime_sec, cleared_map)
+	var run_ctx: Dictionary = {}
+	if _game != null and _game.has_method("build_run_end_context"):
+		run_ctx = _game.build_run_end_context()
+	var meta_end: Dictionary = MetaProgress.record_run_ended(
+		win,
+		RunStats.runtime_sec,
+		cleared_map,
+		run_ctx
+	)
+	run_ctx["map_stars"] = MetaProgress.get_map_stars(cleared_map)
+	var ach_fresh: Array[String] = AchievementService.evaluate_run_end(win, run_ctx)
 	var unlock_line := String(meta_end.get("unlock_line", ""))
-	var diag_tags_line: String = "诊断标签: " + (", ".join(diag_tags) if not diag_tags.is_empty() else "健康")
-	var recent_hot: Array[String] = RunStats.recent_hot_tag_labels(5)
-	var recent_hot_line: String = "近期热门: " + (", ".join(recent_hot) if not recent_hot.is_empty() else "-")
-	var recent_preset: Array[String] = RunStats.recent_preset_usage(3)
-	var preset_usage_line: String = "近期使用预设: " + (", ".join(recent_preset) if not recent_preset.is_empty() else "-")
-	var preset_wr: Array[String] = RunStats.recent_preset_winrates(3)
-	var preset_wr_line: String = "预设胜率: " + (", ".join(preset_wr) if not preset_wr.is_empty() else "-")
-	var preset_stability: Array[String] = RunStats.recent_preset_stability(3)
-	var preset_stability_line: String = "预设稳定性: " + (", ".join(preset_stability) if not preset_stability.is_empty() else "-")
-	var preset_recommend_line: String = RunStats.recommended_preset_summary()
+	var mastery_lines_raw: Array = meta_end.get("mastery_lines", [])
+	var mastery_line := ""
+	if not mastery_lines_raw.is_empty():
+		var ml_parts: Array[String] = []
+		for ln in mastery_lines_raw:
+			ml_parts.append(String(ln))
+		mastery_line = " · ".join(ml_parts)
+	var scrap_mul := float(meta_end.get("scrap_mul", 1.0))
+	if scrap_mul > 1.01:
+		unlock_line = (("难度/契约碎片 ×%.2f。" % scrap_mul) + (" " + unlock_line if not unlock_line.is_empty() else "")).strip_edges()
+	if not ach_fresh.is_empty():
+		var ach_names: Array[String] = []
+		for aid in ach_fresh:
+			var adef: Dictionary = GameDB.STEAM_ACHIEVEMENTS.get(aid, {})
+			ach_names.append(String(adef.get("name", aid)))
+		var ach_bit := "成就：" + (" / ").join(ach_names)
+		unlock_line = (ach_bit + (" · " + unlock_line if not unlock_line.is_empty() else "")).strip_edges()
 	var recent_suggest_line: String = RunStats.recent_primary_suggestion()
 	var action_plan: Array[String] = RunStats.recent_action_plan_personalized()
 	var plan_line: String = "下一步计划: " + ((" / ").join(action_plan) if not action_plan.is_empty() else "-")
-	var preset_line: String = "战术预设: %s" % RunStats.current_tactic_preset_label()
 	var boss_ttk: int = RunStats.boss_ttk()
 	var boss_line: String = "首领: 未出现"
 	if endless_mode:
@@ -436,9 +575,14 @@ func _on_game_over(win: bool) -> void:
 		"recap_line": recap,
 		"flow_line": flow_line,
 		"unlock_line": unlock_line,
+		"mastery_line": mastery_line,
 		"scrap_delta": int(meta_end.get("scrap_delta", 0)),
 		"scrap_total": int(meta_end.get("scrap_total", 0)),
+		"scrap_mul": scrap_mul,
 		"relic_line": relic_line,
+		"suggest_line": recent_suggest_line,
+		"plan_line": plan_line,
+		"next_run_hint": RunStats.menu_next_run_hint(),
 	}
 	result_panel.show_result(result_data, win)
 	
@@ -479,9 +623,11 @@ func _build_run_diagnosis(fusion_ratio: float) -> Dictionary:
 
 func _show_menu(v: bool) -> void:
 	menu_layer.visible = v
+	InputManager.set_menu_mode(v)
 	if v:
 		_refresh_map_unlock_ui()
 		_refresh_meta_stats()
+		call_deferred("_relayout_menu_panel")
 
 
 func _try_smoke_mode_exit() -> bool:
@@ -514,60 +660,62 @@ func _setup_menu_extras() -> void:
 	var panel := menu_layer.get_node_or_null("Root/Panel") as Panel
 	if panel == null:
 		return
-	var subtitle := panel.get_node_or_null("Subtitle") as Label
+	var subtitle := panel.get_node_or_null("Margin/VBox/Subtitle") as Label
 	if subtitle:
 		subtitle.text = GameDB.THEME_TAGLINE
-	var ver := panel.get_node_or_null("VersionLabel") as Label
+	var ver := panel.get_node_or_null("Margin/VBox/VersionLabel") as Label
 	if ver:
-		ver.text = "版本 %s" % GameDB.GAME_VERSION
-	if panel.get_node_or_null("MetaStatsLabel") == null:
-		var ml := Label.new()
-		ml.name = "MetaStatsLabel"
-		ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		ml.add_theme_font_size_override("font_size", 14)
-		ml.add_theme_color_override("font_color", Color(0.62, 0.76, 0.9, 0.92))
-		var quit_btn := panel.get_node_or_null("QuitButton") as Control
-		if quit_btn:
-			panel.add_child(ml)
-			panel.move_child(ml, quit_btn.get_index())
-		else:
-			panel.add_child(ml)
-	if panel.get_node_or_null("HowToButton") == null:
-		var hb := Button.new()
-		hb.name = "HowToButton"
-		hb.text = "玩法说明"
-		hb.add_theme_font_size_override("font_size", 16)
-		hb.pressed.connect(_open_howto_dialog)
-		var start_btn := panel.get_node_or_null("StartButton") as Control
-		if start_btn:
-			panel.add_child(hb)
-			panel.move_child(hb, start_btn.get_index() + 1)
-		else:
-			panel.add_child(hb)
-	if panel.get_node_or_null("MetaUpgradeButton") == null:
-		var mb := Button.new()
-		mb.name = "MetaUpgradeButton"
-		mb.text = "战备强化"
-		mb.add_theme_font_size_override("font_size", 16)
-		mb.pressed.connect(_open_meta_upgrade_panel)
-		var how := panel.get_node_or_null("HowToButton") as Control
-		if how:
-			panel.add_child(mb)
-			panel.move_child(mb, how.get_index() + 1)
-		else:
-			panel.add_child(mb)
-	if panel.get_node_or_null("WhiteboxButton") == null:
-		var wb := Button.new()
-		wb.name = "WhiteboxButton"
-		wb.text = "技能白盒试验场"
-		wb.add_theme_font_size_override("font_size", 16)
-		wb.pressed.connect(_open_skills_whitebox)
-		var meta_btn := panel.get_node_or_null("MetaUpgradeButton") as Control
-		if meta_btn:
-			panel.add_child(wb)
-			panel.move_child(wb, meta_btn.get_index() + 1)
-		else:
-			panel.add_child(wb)
+		ver.text = GameDB.version_line()
+	var how := panel.get_node_or_null("Margin/VBox/ExtraButtons/HowToButton") as Button
+	if how:
+		InputManager.bind_instant_tap(how, _open_howto_dialog)
+	var meta := panel.get_node_or_null("Margin/VBox/ExtraButtons/MetaUpgradeButton") as Button
+	if meta:
+		InputManager.bind_instant_tap(meta, _open_meta_upgrade_panel)
+	var wb := panel.get_node_or_null("Margin/VBox/ExtraButtons/WhiteboxButton") as Button
+	if wb:
+		InputManager.bind_instant_tap(wb, _open_skills_whitebox)
+
+
+func _relayout_menu_panel() -> void:
+	var panel := menu_layer.get_node_or_null("Root/Panel") as Control
+	if panel == null:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var pw := clampf(minf(vp.x - 24.0, 520.0), 320.0, 520.0)
+	var ph := clampf(minf(vp.y - 28.0, 640.0), 460.0, 640.0)
+	panel.offset_left = -pw * 0.5
+	panel.offset_right = pw * 0.5
+	panel.offset_top = -ph * 0.5
+	panel.offset_bottom = ph * 0.5
+	if InputManager.is_touch_ui():
+		var touch_min_h := 52.0
+		for node_name in ["StartButton", "QuitButton"]:
+			var btn := panel.get_node_or_null("Margin/VBox/" + node_name) as Button
+			if btn:
+				btn.custom_minimum_size.y = maxf(btn.custom_minimum_size.y, touch_min_h)
+		var extra := panel.get_node_or_null("Margin/VBox/ExtraButtons") as HBoxContainer
+		if extra:
+			for child in extra.get_children():
+				if child is Button:
+					(child as Button).custom_minimum_size.y = maxf((child as Button).custom_minimum_size.y, 46.0)
+	var ml := panel.get_node_or_null("Margin/VBox/MetaStatsLabel") as Label
+	if ml:
+		ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var avail_w := maxf(280.0, pw - 28.0)
+		var fs := ml.get_theme_font_size("font_size")
+		if fs <= 0:
+			fs = 14
+		var font := ml.get_theme_font("font")
+		var text_h := 52.0
+		if font:
+			text_h = font.get_multiline_string_size(
+				ml.text,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				avail_w,
+				fs
+			).y + 8.0
+		ml.custom_minimum_size = Vector2(0.0, clampf(text_h, 48.0, 128.0))
 
 
 func _open_skills_whitebox() -> void:
@@ -677,6 +825,45 @@ func _refresh_meta_upgrade_rows() -> void:
 		_meta_upgrade_rows.add_child(row)
 	var sep_codex := HSeparator.new()
 	_meta_upgrade_rows.add_child(sep_codex)
+	var mastery_title := Label.new()
+	mastery_title.text = "—— 地图精通（称号进度，无永久数值膨胀）——"
+	mastery_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_meta_upgrade_rows.add_child(mastery_title)
+	var star_sum := MetaProgress.total_map_mastery_stars()
+	var star_cap := GameDB.MAP_TEMPLATES.size() * 3
+	var mastery_prog := Label.new()
+	mastery_prog.text = "完成度：%d / %d★" % [star_sum, star_cap]
+	mastery_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mastery_prog.add_theme_font_size_override("font_size", 12)
+	mastery_prog.add_theme_color_override("font_color", Color(0.72, 0.82, 0.95, 1.0))
+	_meta_upgrade_rows.add_child(mastery_prog)
+	for mi in GameDB.MAP_TEMPLATES.size():
+		var mtpl: Dictionary = GameDB.MAP_TEMPLATES[mi]
+		var mrow := Label.new()
+		mrow.text = "%s  %s" % [
+			String(mtpl.get("title", mtpl.get("id", "地图"))),
+			GameDB.map_mastery_stars_text(MetaProgress.get_map_stars(mi))
+		]
+		mrow.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_meta_upgrade_rows.add_child(mrow)
+	_append_meta_codex_section(
+		"融合图鉴（局内激活过即勾选）",
+		_meta_fusion_codex_rows()
+	)
+	_append_meta_codex_section(
+		"五流派专精图鉴（点过一级即勾选）",
+		_meta_school_codex_rows()
+	)
+	var sep_intel := HSeparator.new()
+	_meta_upgrade_rows.add_child(sep_intel)
+	var intel := Label.new()
+	intel.text = "局内情报：升级时可花碎片重抽(%d) / 排除(%d)，每局各一次。" % [
+		GameDB.RUN_SCRAP_REROLL_COST, GameDB.RUN_SCRAP_BAN_COST
+	]
+	intel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_meta_upgrade_rows.add_child(intel)
+	var sep2 := HSeparator.new()
+	_meta_upgrade_rows.add_child(sep2)
 	var codex_title := Label.new()
 	codex_title.text = "遗物图鉴（胜场 / 碎片入库 / 是否已进入随机池）"
 	codex_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -774,6 +961,67 @@ func _meta_relic_codex_status_line(rid: String, rdef: Dictionary) -> String:
 	return " · ".join(parts)
 
 
+func _append_meta_codex_section(title_text: String, rows: Array) -> void:
+	if _meta_upgrade_rows == null:
+		return
+	var sep := HSeparator.new()
+	_meta_upgrade_rows.add_child(sep)
+	var title := Label.new()
+	title.text = title_text
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 13)
+	_meta_upgrade_rows.add_child(title)
+	for row in rows:
+		if typeof(row) != TYPE_DICTIONARY:
+			continue
+		var card := VBoxContainer.new()
+		card.add_theme_constant_override("separation", 2)
+		var nm := Label.new()
+		nm.text = String(row.get("name", ""))
+		nm.theme_type_variation = &"Label.Body"
+		card.add_child(nm)
+		var st := Label.new()
+		var seen := bool(row.get("seen", false))
+		st.text = "已见过" if seen else "未解锁（再开一局尝试）"
+		st.add_theme_font_size_override("font_size", 11)
+		st.add_theme_color_override(
+			"font_color",
+			Color(0.52, 0.88, 0.62, 1.0) if seen else Color(0.88, 0.72, 0.55, 1.0)
+		)
+		card.add_child(st)
+		_meta_upgrade_rows.add_child(card)
+
+
+func _meta_fusion_codex_rows() -> Array:
+	var out: Array = []
+	var keys: Array[String] = []
+	for fid in GameDB.FUSIONS.keys():
+		keys.append(String(fid))
+	keys.sort()
+	for fid in keys:
+		var fdef: Dictionary = GameDB.FUSIONS[fid]
+		var wid := String(fdef.get("weapon", ""))
+		var wname := wid
+		if GameDB.WEAPONS.has(wid):
+			wname = String(GameDB.WEAPONS[wid].get("name", wid))
+		out.append({
+			"name": "%s · %s" % [wname, String(fdef.get("desc", fid))],
+			"seen": bool(MetaProgress.fusions_seen.get(fid, false)),
+		})
+	return out
+
+
+func _meta_school_codex_rows() -> Array:
+	var out: Array = []
+	for pid in GameDB.SCHOOL_MASTERY_IDS:
+		var pdef: Dictionary = GameDB.PASSIVES.get(pid, {}) as Dictionary
+		out.append({
+			"name": String(pdef.get("name", pid)),
+			"seen": bool(MetaProgress.school_mastery_seen.get(pid, false)),
+		})
+	return out
+
+
 func _on_meta_relic_unlock_pressed(rid: String) -> void:
 	if MetaProgress.try_purchase_run_relic_unlock(rid):
 		EventBus.play_sfx.emit(&"upgrade_pick", Vector2.ZERO)
@@ -800,6 +1048,10 @@ func _refresh_map_unlock_ui() -> void:
 		Settings.set_selected_map_index(upto)
 	for i in n:
 		_map_select_opt.set_item_disabled(i, i > upto)
+		if i < GameDB.MAP_TEMPLATES.size():
+			var tpl: Dictionary = GameDB.MAP_TEMPLATES[i]
+			var t := String(tpl.get("title", tpl.get("id", "地图 %d" % i)))
+			_map_select_opt.set_item_text(i, "%s · %s" % [t, GameDB.map_mastery_stars_text(MetaProgress.get_map_stars(i))])
 	var sel := clampi(Settings.selected_map_index, 0, upto)
 	_map_select_opt.select(sel)
 
@@ -808,9 +1060,18 @@ func _refresh_meta_stats() -> void:
 	var panel := menu_layer.get_node_or_null("Root/Panel") as Panel
 	if panel == null:
 		return
-	var ml := panel.get_node_or_null("MetaStatsLabel") as Label
+	var ml := panel.get_node_or_null("Margin/VBox/MetaStatsLabel") as Label
 	if ml:
-		ml.text = MetaProgress.summary_line() + "\n" + RunStats.menu_next_run_hint()
+		var demo_line := "Demo：锁定试炼模式" if GameDB.is_demo_build() else GameDB.version_line()
+		var goal := MetaProgress.next_goal_line()
+		var hint := RunStats.menu_next_run_hint()
+		# 永久强化满级后优先展示收藏/挑战目标，不再只剩战术 hint
+		if MetaProgress.is_meta_upgrades_maxed():
+			hint = goal
+		else:
+			hint = goal + "\n" + hint
+		ml.text = MetaProgress.summary_line() + "\n" + AchievementService.summary_line() + "\n" + hint + "\n" + demo_line
+		call_deferred("_relayout_menu_panel")
 
 
 func _open_howto_dialog() -> void:
@@ -820,8 +1081,11 @@ func _open_howto_dialog() -> void:
 	var dlg := AcceptDialog.new()
 	dlg.title = GameDB.HOWTO_TITLE
 	var body := ""
+	if GameDB.is_demo_build():
+		body += "【Demo】本包锁定「试炼 · 5 分钟」。完整版开放标准 10 分钟 / 持久 18 分钟与挑战契约。\n\n"
 	for i in range(GameDB.HOWTO_STEPS.size()):
 		body += "%d) %s\n" % [i + 1, String(GameDB.HOWTO_STEPS[i])]
+	body += "\n—— 商店一句话 ——\n" + GameDB.STORE_PAGE_BLURB
 	dlg.dialog_text = body.strip_edges()
 	dlg.ok_button_text = "知道了"
 	add_child(dlg)

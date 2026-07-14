@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"/><title>AI 弹体集 · 试样 A 风格</title>
+<style>
+body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#06080e;color:#eef1f8;padding:28px}
+h1{margin:0 0 6px}.badge{display:inline-block;background:#1a3a28;color:#7cff9a;padding:4px 10px;border-radius:6px;font-size:12px;margin-bottom:14px}
+.sub{color:#8b93a8;line-height:1.7;font-size:14px;max-width:920px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;max-width:1180px}
+.card{background:#0e1118;border:1px solid #2a3144;border-radius:10px;overflow:hidden}
+.head{padding:12px 14px 8px;border-bottom:3px solid var(--bar,#5ec8ff)}
+.head h2{margin:0;font-size:16px}.head p{margin:4px 0 0;font-size:12px;color:#8b93a8}
+.body{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}
+.panel{background:#04060a;border-radius:8px;padding:10px;text-align:center}
+.panel img{width:132px;height:132px;filter:drop-shadow(0 0 12px rgba(80,180,255,.35))}
+.anim{display:flex;gap:5px;justify-content:center;align-items:center;min-height:132px;flex-wrap:wrap}
+.anim img{width:54px;height:54px}
+.note{margin-top:22px;max-width:920px;padding:16px;border:1px dashed #2a3144;border-radius:8px;color:#8b93a8;font-size:13px;line-height:1.75}
+</style></head><body>
+<h1>AI 弹体全集 · 试样 A 风格</h1>
+<div class="badge">44 张已生成 · 透明底 512px · 已写入 game_pack（实机未切换）</div>
+<p class="sub">基于试样 A（苦无）统一风格生成。左：主视图 frame_0，右：4 帧动画。确认后回复「同意接入」替换实机弹体。</p>
+<div class="grid" id="g"></div>
+<div class="note">
+<strong>路径：</strong><br>
+预览：assets/previews/weapon_projectiles/ai_set_a/processed/<br>
+实装候选：assets/game_pack/vfx/projectiles/{武器}/frame_0~3.png<br>
+原始黑底：assets/previews/weapon_projectiles/ai_set_a/raw/
+</div>
+<script>
+const ws=[
+{id:"kunai",n:"苦无 ★",b:"#5ec8ff",t:"试样A基准"},
+{id:"quantum_ball",n:"量子球 ★",b:"#7cff7a",t:"能量球"},
+{id:"lightning",n:"雷电 ★",b:"#7ad4ff",t:"闪电"},
+{id:"rocket",n:"火箭 ★",b:"#ff8a45",t:"导弹"},
+{id:"boomerang",n:"回旋镖 ★",b:"#ffd45a",t:"V翼"},
+{id:"drone_ab",n:"无人机 ★",b:"#8ec8ff",t:"四旋翼"},
+{id:"molotov",n:"燃烧瓶",b:"#ff7a35",t:"酒瓶"},
+{id:"guardian",n:"守卫者",b:"#ffd86a",t:"金盾"},
+{id:"frost_aura",n:"冰霜",b:"#7ec8ff",t:"雪花"},
+{id:"heal_aura",n:"治疗",b:"#5cff9a",t:"十字"},
+{id:"stun_mine",n:"地雷",b:"#c88aff",t:"刺雷"}
+];
+const base="processed/";
+const g=document.getElementById("g");
+for(const w of ws){
+const el=document.createElement("article");el.className="card";el.style.setProperty("--bar",w.b);
+el.innerHTML=`<div class="head"><h2>${w.n}</h2><p>${w.t}</p></div><div class="body">
+<div class="panel"><img src="${base}${w.id}/frame_0.png"/><span style="font-size:11px;color:#8b93a8">frame_0</span></div>
+<div class="panel"><div class="anim">${[0,1,2,3].map(f=>`<img src="${base}${w.id}/frame_${f}.png"/>`).join("")}</div>
+<span style="font-size:11px;color:#8b93a8">4帧</span></div></div>`;g.appendChild(el);}
+</script></body></html>

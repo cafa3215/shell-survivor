@@ -20,9 +20,9 @@ var _perf_guard_btn: Button = null
 var _early_flow_btn: Button = null
 
 func _ready() -> void:
-	resume_btn.pressed.connect(func(): resume_pressed.emit())
-	restart_btn.pressed.connect(func(): restart_pressed.emit())
-	menu_btn.pressed.connect(func(): menu_pressed.emit())
+	InputManager.bind_instant_tap(resume_btn, func(): resume_pressed.emit())
+	InputManager.bind_instant_tap(restart_btn, func(): restart_pressed.emit())
+	InputManager.bind_instant_tap(menu_btn, func(): menu_pressed.emit())
 	_setup_vfx_button()
 	visible = false
 
@@ -69,7 +69,7 @@ func _update_vfx_button_text() -> void:
 			label = "电影爽感"
 		_:
 			label = "平衡默认"
-	_vfx_btn.text = "✨ 特效风格：%s" % label
+	_vfx_btn.text = "特效风格：%s" % label
 
 func _toggle_extreme_perf_guard() -> void:
 	Settings.set_extreme_perf_guard(not Settings.extreme_perf_guard)
@@ -78,7 +78,7 @@ func _toggle_extreme_perf_guard() -> void:
 func _update_perf_guard_button_text() -> void:
 	if _perf_guard_btn == null:
 		return
-	_perf_guard_btn.text = "⚡ 高压性能保护：%s" % ("开" if Settings.extreme_perf_guard else "关")
+	_perf_guard_btn.text = "高压性能保护：%s" % ("开" if Settings.extreme_perf_guard else "关")
 
 
 func _cycle_early_flow_preset() -> void:
@@ -100,7 +100,7 @@ func _update_early_flow_button_text() -> void:
 			label = "激进"
 		_:
 			label = "平衡"
-	_early_flow_btn.text = "🎯 首局吸引力：%s" % label
+	_early_flow_btn.text = "首局吸引力：%s" % label
 
 func show_pause() -> void:
 	if _is_visible:

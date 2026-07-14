@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b4co155r2topg"
-valid=false
+uid="uid://byco2qf6ucg5q"
+path="res://.godot/imported/player_chibi.png-17ca70fa2fafe2210b8519f73281c486.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/game_pack/textures/player_chibi.png"
+dest_files=["res://.godot/imported/player_chibi.png-17ca70fa2fafe2210b8519f73281c486.ctex"]
 
 [params]
 

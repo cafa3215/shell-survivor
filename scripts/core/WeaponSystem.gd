@@ -21,6 +21,7 @@ var _projectile_layer: WeaponProjectileLayer
 # ========== 新功能性武器状态 ==========
 var _frost_aura_active: bool = false
 var _frost_aura_timer: float = 0.0
+var _frost_freeze_pulse_cd: float = 0.0
 var _heal_aura_timer: float = 0.0
 var _mine_positions: Array[Vector2] = []
 
@@ -34,6 +35,9 @@ var _particle_mgr: Node2D
 var _damage_numbers_this_frame := 0
 var _max_damage_numbers_per_frame := 18
 var _fx_source_cooldowns: Dictionary = {}
+var _hit_feedback_recent: Array[Dictionary] = []
+const _HIT_FEEDBACK_SPATIAL_R2 := 576.0 # 24px
+const _HIT_FEEDBACK_SPATIAL_WINDOW := 0.07
 var _fusion_lv4_hint_sent: Dictionary = {}
 var _fusion_spike_cd := 0.0
 var _threat_hit_cd: float = 0.0
@@ -43,6 +47,8 @@ var _dev_reload_hotkey_cd := 0.0
 var _run_combat_active := false
 var _combat_warmup_rem := 0.0
 const _COMBAT_WARMUP_SEC := 1.35
+## 当前武器开火是否真暴击（供跳字/命中皮读取；延迟伤害用 pending 字段覆盖）
+var _shot_is_crit := false
 
 ## 核心武器“逻辑卡片”：集中维护轨迹/命中/特效关键参数，便于快速扩展新武器。
 const _WEAPON_LOGIC_CARD := {
@@ -208,6 +214,7 @@ func _process(delta: float) -> void:
 	if player == null or enemy_manager == null:
 		return
 	_update_extreme_perf_mode(delta)
+	_sync_vfx_overload_mul()
 	if _run_combat_active:
 		_sync_weapon_presence_visuals()
 
@@ -268,6 +275,8 @@ func _update_extreme_perf_mode(delta: float) -> void:
 				_weapon_telegraph.set_runtime_overload_mul(1.0)
 			if _projectile_layer != null and _projectile_layer.has_method("set_runtime_overload_mul"):
 				_projectile_layer.set_runtime_overload_mul(1.0)
+			if _particle_mgr != null and _particle_mgr.has_method("set_runtime_overload_mul"):
+				_particle_mgr.set_runtime_overload_mul(1.0)
 			NotificationSystem.notify_message("高压性能保护已关闭", 1.0, "warning")
 		return
 	_extreme_perf_tick -= delta
@@ -305,7 +314,23 @@ func _update_extreme_perf_mode(delta: float) -> void:
 		_weapon_telegraph.set_runtime_overload_mul(0.74 if _extreme_perf_mode else 1.0)
 	if _projectile_layer != null and _projectile_layer.has_method("set_runtime_overload_mul"):
 		_projectile_layer.set_runtime_overload_mul(0.78 if _extreme_perf_mode else 1.0)
+	if _particle_mgr != null and _particle_mgr.has_method("set_runtime_overload_mul"):
+		_particle_mgr.set_runtime_overload_mul(0.74 if _extreme_perf_mode else 1.0)
 	NotificationSystem.notify_message("高压性能保护" if _extreme_perf_mode else "高压性能保护已解除", 1.0, "warning")
+
+func _sync_vfx_overload_mul() -> void:
+	if _extreme_perf_mode:
+		return
+	var pressure := _runtime_pressure_mul()
+	var mul := 1.0
+	if pressure > 1.2:
+		mul = lerpf(1.0, 0.84, clampf((pressure - 1.2) / 0.65, 0.0, 1.0))
+	if _weapon_telegraph != null and _weapon_telegraph.has_method("set_runtime_overload_mul"):
+		_weapon_telegraph.set_runtime_overload_mul(mul)
+	if _projectile_layer != null and _projectile_layer.has_method("set_runtime_overload_mul"):
+		_projectile_layer.set_runtime_overload_mul(lerpf(mul, 1.0, 0.35))
+	if _particle_mgr != null and _particle_mgr.has_method("set_runtime_overload_mul"):
+		_particle_mgr.set_runtime_overload_mul(mul)
 
 func level_up_weapon(id: String) -> void:
 	var prev_lv := int(level_map.get(id, 0))
@@ -314,13 +339,21 @@ func level_up_weapon(id: String) -> void:
 	if int(level_map.get(id, 0)) == 0:
 		var active_count := 0
 		for wid in level_map.keys():
+			# 治疗光环视为支援栏：不挤占输出武器位
+			if String(wid) == "heal_aura":
+				continue
 			if int(level_map[wid]) > 0:
 				active_count += 1
-		if active_count >= GameDB.WEAPON_SLOTS:
-			# 栏位已满，替换等级最低的武器
+		var slot_cap := GameDB.WEAPON_SLOTS
+		if id == "heal_aura":
+			slot_cap += 1
+		if active_count >= slot_cap and id != "heal_aura":
+			# 栏位已满，替换等级最低的非治疗武器
 			var lowest_wid := ""
 			var lowest_lv := 99
 			for wid in level_map.keys():
+				if String(wid) == "heal_aura":
+					continue
 				var lv := int(level_map[wid])
 				if lv > 0 and lv < lowest_lv:
 					lowest_lv = lv
@@ -381,7 +414,8 @@ func _scaled_cd(wid: String) -> float:
 	var fr := 0.0
 	if _skill_system and _skill_system.stats.has("fire_rate"):
 		fr = float(_skill_system.stats["fire_rate"])
-	var base: float = float(cd_map[wid]) / maxf(0.3, 1.0 + fr * 0.15)
+	# fire_rate 与升级卡一致：+0.10 → APS +10%（CD = base / (1+fr)）
+	var base: float = float(cd_map[wid]) / maxf(0.3, 1.0 + fr)
 	# 《弓箭手传说》：站定略减武器间隔（边走边打略慢）
 	if player and player.velocity.length() < GameDB.ARCHERO_STATIONARY_VEL_THRESH:
 		base *= GameDB.ARCHERO_STATIONARY_WEAPON_CD_MUL
@@ -414,7 +448,7 @@ func _ensure_projectile_layer() -> void:
 		return
 	_projectile_layer = WeaponProjectileLayer.new()
 	_projectile_layer.name = "WeaponProjectileLayer"
-	_projectile_layer.z_index = 4
+	_projectile_layer.z_index = 12
 	parent.call_deferred("add_child", _projectile_layer)
 
 
@@ -423,6 +457,12 @@ func _world_curse_out_damage_mul() -> float:
 	if g != null and g.has_method("get_curse_outgoing_damage_mul"):
 		return float(g.call("get_curse_outgoing_damage_mul"))
 	return 1.0
+
+
+func _stat(key: String, default: float = 0.0) -> float:
+	if _skill_system and _skill_system.stats.has(key):
+		return float(_skill_system.stats[key])
+	return default
 
 
 # ============================================
@@ -446,7 +486,7 @@ func _fire_weapon(wid: String) -> void:
 		atk_bonus *= GameDB.CRIT_MULTIPLIER
 	var ex_mul := (1.5 if lv >= 6 else 1.0) * atk_bonus * _world_curse_out_damage_mul() * _early_game_damage_mul(wid, lv)
 	var is_evolved := lv >= 6
-	
+	_shot_is_crit = is_crit
 	match wid:
 		"kunai":
 			_fire_kunai(p, lv, ex_mul, is_evolved)
@@ -471,28 +511,18 @@ func _fire_weapon(wid: String) -> void:
 			_fire_stun_mine(p, lv, ex_mul, is_evolved)
 		"heal_aura":
 			_fire_heal_aura(p, lv, ex_mul, is_evolved)
+	_shot_is_crit = false
 
 
-func _early_game_damage_mul(wid: String, lv: int) -> float:
-	# 前10分钟对核心武器做轻量托底，减少“前期刮痧感”。
-	var game := get_parent()
-	if game == null or not ("elapsed" in game):
-		return 1.0
-	var t := float(game.get("elapsed"))
-	if t > 600.0:
-		return 1.0
-	var boost := 1.0
-	match wid:
-		"kunai", "quantum_ball":
-			boost = 1.0 + clampf((360.0 - t) / 360.0, 0.0, 1.0) * 0.12
-		"lightning":
-			boost = 1.0 + clampf((420.0 - t) / 420.0, 0.0, 1.0) * 0.08
-		_:
-			boost = 1.0
-	# 低等级时给一点补偿，等级上来后自动回归常态。
-	if lv <= 2:
-		boost *= 1.05
-	return clampf(boost, 1.0, 1.18)
+func _orbit_damage_mul(is_evolved: bool) -> float:
+	var atk := 1.0
+	if _skill_system and _skill_system.stats.has("atk_bonus"):
+		atk = 1.0 + float(_skill_system.stats["atk_bonus"])
+	return (1.5 if is_evolved else 1.0) * atk * _world_curse_out_damage_mul()
+
+
+func _early_game_damage_mul(_wid: String, _lv: int) -> float:
+	return 1.0
 
 # 1. 苦无 - 投掷武器，进化后无限追踪穿透
 func _fire_kunai(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
@@ -502,7 +532,7 @@ func _fire_kunai(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 	if target == null:
 		target = p + Vector2.RIGHT * 200.0
 	
-	var dmg := (22.0 + lv * 6.0) * ex_mul
+	var dmg := (20.0 + lv * 5.5) * ex_mul
 	var rad := 12.0 + lv * 1.5
 	var target_pos := Vector2(target)
 	var aim_dir := (target_pos - p).normalized() if target != null else Vector2.RIGHT
@@ -512,18 +542,27 @@ func _fire_kunai(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 		float(card["travel_max_base"]) + lv * float(card["travel_max_per_lv"])
 	)
 	target_pos = origin + aim_dir * travel
-	var arc_mid := origin.lerp(target_pos, 0.55) + aim_dir.orthogonal() * randf_range(-float(card["trail_arc_jitter"]), float(card["trail_arc_jitter"])) * (float(card["trail_arc_mul_base"]) + lv * float(card["trail_arc_mul_per_lv"]))
-	_projectile_visual(origin, aim_dir, "kunai", 700.0 + lv * 18.0, 0.38, lv, is_evolved)
+	var arc_side := 1.0 if randf() > 0.5 else -1.0
+	var arc_strength := float(card["trail_arc_mul_base"]) + lv * float(card["trail_arc_mul_per_lv"])
+	var arc_jitter := randf_range(-float(card["trail_arc_jitter"]), float(card["trail_arc_jitter"]))
+	var arc_mid := origin.lerp(target_pos, 0.44) + aim_dir.orthogonal() * arc_jitter * arc_strength * arc_side
+	if lv >= 3:
+		# 高等级：S 形双控制点，弹道更可辨
+		var arc_mid2 := origin.lerp(target_pos, 0.72) + aim_dir.orthogonal() * arc_jitter * arc_strength * -arc_side * 0.55
+		_projectile_visual_bezier_cubic(origin, arc_mid, arc_mid2, target_pos, "kunai", 0.42, lv, is_evolved)
+	else:
+		_projectile_visual_bezier(origin, arc_mid, target_pos, "kunai", 0.38, lv, is_evolved)
+	var fan_bonus := _stat("kunai_fan_angle")
 	if lv >= 2 or is_evolved:
-		var kunai_echo_spread := 0.07 + float(lv) * 0.006
-		_projectile_visual(origin + aim_dir.orthogonal() * -5.0, aim_dir.rotated(-kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
-		_projectile_visual(origin + aim_dir.orthogonal() * 5.0, aim_dir.rotated(kunai_echo_spread), "kunai", 760.0 + lv * 12.0, 0.19, lv, is_evolved)
-	if _weapon_telegraph != null:
-		_weapon_telegraph.add_kunai_trail(origin, arc_mid)
-		_weapon_telegraph.add_kunai_trail(arc_mid, target_pos)
-		_weapon_telegraph.add_kunai_impact_cross(target_pos, aim_dir, 0.21, 0.95 + lv * 0.06)
+		var kunai_echo_spread := 0.07 + float(lv) * 0.006 + fan_bonus
+		var echo_arc_l := origin.lerp(target_pos, 0.5) + aim_dir.orthogonal() * (-18.0 - float(lv) * 2.0)
+		var echo_arc_r := origin.lerp(target_pos, 0.5) + aim_dir.orthogonal() * (18.0 + float(lv) * 2.0)
+		_projectile_visual_bezier(origin + aim_dir.orthogonal() * -5.0, echo_arc_l, target_pos, "kunai", 0.2, lv, is_evolved, aim_dir.rotated(-kunai_echo_spread))
+		_projectile_visual_bezier(origin + aim_dir.orthogonal() * 5.0, echo_arc_r, target_pos, "kunai", 0.2, lv, is_evolved, aim_dir.rotated(kunai_echo_spread))
+	if _weapon_telegraph != null and _runtime_pressure_mul() < 1.2:
+		_weapon_telegraph.add_kunai_impact_cross(target_pos, aim_dir, 0.14, 0.82 + lv * 0.04)
 	var line_hits := _get_enemies_in_line(origin, target_pos, float(card["line_width_base"]) + lv * float(card["line_width_per_lv"]))
-	var line_hit_cap := int(card["line_hit_cap_base"]) + int(lv / int(card["line_lv_div"] if card.has("line_lv_div") else card["line_hit_cap_lv_div"])) + (int(card["line_hit_cap_evolved_bonus"]) if is_evolved else 0)
+	var line_hit_cap := int(card["line_hit_cap_base"]) + int(lv / int(card["line_lv_div"] if card.has("line_lv_div") else card["line_hit_cap_lv_div"])) + (int(card["line_hit_cap_evolved_bonus"]) if is_evolved else 0) + int(_stat("kunai_pierce"))
 	var line_damage := dmg * (float(card["line_damage_mul_evolved"]) if is_evolved else float(card["line_damage_mul_normal"]))
 	var hit_count := 0
 	for hit_pos in line_hits:
@@ -538,10 +577,9 @@ func _fire_kunai(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 	_report_damage("kunai_finish", finisher_dmg, to_boss, is_evolved, target_pos)
 	if is_evolved:
 		for side in [-1.0, 1.0]:
-			var side_dir := aim_dir.rotated(side * 0.24)
+			var side_dir := aim_dir.rotated(side * (0.24 + fan_bonus))
 			var side_end := origin + side_dir * (travel * 0.82)
-			if _weapon_telegraph != null:
-				_weapon_telegraph.add_kunai_trail(origin, side_end)
+			_projectile_line_salvo(origin, side_end, "kunai", 0.12, 5, lv, true)
 			var side_hits := _get_enemies_in_line(origin, side_end, 14.0 + lv * 1.4)
 			var side_dmg := dmg * 0.42
 			var side_cap := 2 + int(lv / 3)
@@ -562,16 +600,19 @@ func _fire_quantum_ball(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) ->
 		target = p + _rand_vec(180.0)
 	
 	var aim_dir := (Vector2(target) - p).normalized()
-	_projectile_visual(p, aim_dir, "quantum_ball", 500.0, 0.42, lv, is_evolved)
-	
-	var dmg := (24.0 + lv * 7.0) * ex_mul
-	var rad := float(card["burst_radius_base"]) + lv * float(card["burst_radius_per_lv"])
 	var tg: Vector2 = Vector2(target)
+	var mid := p.lerp(tg, 0.48) + aim_dir.orthogonal() * (22.0 + lv * 2.5)
+	_projectile_visual_bezier(p, mid, tg, "quantum_ball", 0.44, lv, is_evolved)
+	
+	var dmg := (25.0 + lv * 7.2) * ex_mul
+	var rad := float(card["burst_radius_base"]) + lv * float(card["burst_radius_per_lv"])
 	
 	if _weapon_telegraph != null:
-		_weapon_telegraph.add_quantum_burst_preview(tg, rad, 0.26)
-		_weapon_telegraph.add_quantum_striker_line(p, tg, 0.22, 3.8)
-		_weapon_telegraph.add_quantum_hex_pulse(tg, rad * 0.84, 0.2)
+		var pressure := _runtime_pressure_mul()
+		_weapon_telegraph.add_quantum_burst_preview(tg, rad, 0.18)
+		if pressure < 1.05:
+			_weapon_telegraph.add_quantum_hex_pulse(tg, rad * 0.84, 0.14)
+	_projectile_line_salvo(p, tg, "quantum_ball", 0.14, 6, lv, is_evolved)
 	
 	# 主爆炸
 	enemy_manager.apply_damage_circle(target, rad, dmg, &"quantum_ball")
@@ -599,8 +640,8 @@ func _fire_quantum_ball(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) ->
 		
 		visited.append(next_pos)
 		
-		if _weapon_telegraph != null:
-			_weapon_telegraph.add_quantum_striker_line(last_pos, next_pos, 0.19, 2.9)
+		if _projectile_layer != null:
+			_projectile_line_salvo(last_pos, next_pos, "quantum_ball", 0.12, 5, lv, is_evolved)
 		
 		var chain_dmg := dmg * (0.5 if i == 0 else 0.35)
 		var chain_rad := rad * (0.7 if i == 0 else 0.5)
@@ -624,19 +665,16 @@ func _fire_lightning(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 	if target == null:
 		target = p + _rand_vec(260.0)
 	
-	var dmg := (40.0 + lv * 9.0) * ex_mul
+	var dmg := (41.0 + lv * 9.0) * ex_mul
 	var rad := float(card["strike_radius_base"]) + lv * float(card["strike_radius_per_lv"])
 	
-	# 显示雷电预警 + 主束（玩家→目标）
+	# 显示雷电预警 + 弹体齐射（玩家→目标）
 	if _weapon_telegraph != null:
-		_weapon_telegraph.add_lightning_mark(target, rad, 0.08)
-		_weapon_telegraph.add_lightning_main_beam(p, Vector2(target), 0.16)
-		_weapon_telegraph.add_lightning_hex_pulse(Vector2(target), rad * 0.62, 0.2)
-		# 参考弹壳的“短促回闪”语义：主击后在目标附近补一条很短的副链。
-		var flick_dir := (Vector2(target) - p).normalized()
-		var flick_from := Vector2(target) - flick_dir * 16.0
-		var flick_to := Vector2(target) + flick_dir.orthogonal() * 22.0
-		_weapon_telegraph.add_lightning_chain(flick_from, flick_to, 0.08)
+		var pressure := _runtime_pressure_mul()
+		_weapon_telegraph.add_lightning_mark(target, rad, 0.06)
+		if pressure < 1.2:
+			_weapon_telegraph.add_lightning_hex_pulse(Vector2(target), rad * 0.62, 0.14)
+	_projectile_line_salvo(p, Vector2(target), "lightning", 0.11, 7, lv, is_evolved)
 	
 	# 主雷电伤害
 	enemy_manager.apply_damage_circle(target, rad, dmg, &"lightning")
@@ -654,9 +692,9 @@ func _fire_lightning(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 	EventBus.lightning_strike.emit(p, Vector2(target))
 	EventBus.enemy_stunned.emit(Vector2(target), float(card["main_stun_evolved"]) if is_evolved else float(card["main_stun_normal"]))
 	
-	# 链式跳跃（避免反复命中同一目标）
-	var jump_count := int(card["jump_base"]) + int(lv / int(card["jump_lv_div"])) + (int(card["jump_evolved_bonus"]) if is_evolved else 0)
-	var jump_range := float(card["jump_range_base"]) + lv * float(card["jump_range_per_lv"])
+	# 链式跳跃（避免反复命中同一目标）；雷链专精加次数/距离
+	var jump_count := int(card["jump_base"]) + int(lv / int(card["jump_lv_div"])) + (int(card["jump_evolved_bonus"]) if is_evolved else 0) + int(_stat("lightning_jumps"))
+	var jump_range := float(card["jump_range_base"]) + lv * float(card["jump_range_per_lv"]) + _stat("lightning_jump_range")
 	var last_pos2: Vector2 = target if target != null else p
 	var jump_dmg := dmg * 0.6
 	var visited: Array[Vector2] = []
@@ -670,8 +708,7 @@ func _fire_lightning(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 		var jump_pos: Vector2 = jump_target
 		visited.append(jump_pos)
 
-		if _weapon_telegraph != null:
-			_weapon_telegraph.add_lightning_chain(lp2, jump_pos, 0.13)
+		_projectile_line_salvo(lp2, jump_pos, "lightning", 0.1, 5, lv, is_evolved)
 
 		enemy_manager.apply_damage_circle(jump_pos, rad * 0.7, jump_dmg, &"lightning")
 		var jump_boss: bool = enemy_manager.apply_damage_to_boss(jump_pos, rad * 0.7, jump_dmg)
@@ -682,8 +719,7 @@ func _fire_lightning(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 			var branch_t: Variant = _find_bounce_target(jump_pos, visited, jump_range * 0.58)
 			if branch_t != null:
 				var branch_pos := Vector2(branch_t)
-				if _weapon_telegraph != null:
-					_weapon_telegraph.add_lightning_chain(jump_pos, branch_pos, 0.1)
+				_projectile_line_salvo(jump_pos, branch_pos, "lightning", 0.09, 4, lv, true)
 				var branch_dmg := jump_dmg * 0.46
 				enemy_manager.apply_damage_circle(branch_pos, rad * 0.52, branch_dmg, &"lightning")
 				var branch_boss: bool = enemy_manager.apply_damage_to_boss(branch_pos, rad * 0.52, branch_dmg)
@@ -701,12 +737,14 @@ func _fire_rocket(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 		target = p + _rand_vec(210.0)
 	
 	var aim_dir := (Vector2(target) - p).normalized()
-	_projectile_visual(p, aim_dir, "rocket", float(card["speed"]), float(card["life"]), lv, is_evolved)
+	var tg: Vector2 = Vector2(target)
+	var arc_ctrl := p.lerp(tg, 0.55) + aim_dir.orthogonal() * (28.0 + lv * 2.0)
+	_projectile_visual_bezier(p, arc_ctrl, tg, "rocket", float(card["life"]) * 0.92, lv, is_evolved)
 	# 火箭发射瞬间增加尾焰，强调“重型发射器”反馈。
 	if _particle_mgr != null:
 		_particle_mgr.rocket_embers(p - aim_dir * 10.0, Color(1.0, 0.7, 0.36, 0.95))
 	
-	var dmg := (56.0 + lv * 10.0) * ex_mul
+	var dmg := (58.0 + lv * 10.5) * ex_mul
 	var rad := float(card["blast_radius_base"]) + lv * float(card["blast_radius_per_lv"])
 	var delay := float(card["delay_evolved"]) if is_evolved else float(card["delay_normal"])
 	
@@ -724,7 +762,8 @@ func _fire_rocket(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 		"damage": dmg,
 		"time": delay,
 		"is_evolved": is_evolved,
-		"dir": aim_dir
+		"dir": aim_dir,
+		"is_crit": _shot_is_crit,
 	})
 
 # 5. 燃烧瓶 - 地面持续灼烧AOE
@@ -734,9 +773,12 @@ func _fire_molotov(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void
 		target = p + _rand_vec(170.0)
 	
 	var aim_dir := (Vector2(target) - p).normalized()
-	_projectile_visual(p, aim_dir, "molotov", 450.0, 0.42, lv, is_evolved)
+	var tg: Vector2 = Vector2(target)
+	var apex := p.lerp(tg, 0.42) + Vector2(0.0, -48.0 - lv * 4.0)
+	_projectile_visual_bezier(p, apex, tg, "molotov", 0.48, lv, is_evolved)
 	
-	var dmg := (16.0 + lv * 4.0) * ex_mul
+	var burn_mul := 1.0 + _stat("burn_dps_mul")
+	var dmg := (19.0 + lv * 4.5) * ex_mul * burn_mul
 	var rad := 115.0 + lv * 5.0
 	var burn_time := 3.2 + lv * 0.25
 	
@@ -756,7 +798,7 @@ func _fire_molotov(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void
 	_report_damage("molotov_impact", impact_dmg, impact_boss, is_evolved, target)
 	_apply_sector_damage(Vector2(target), aim_dir, rad * 0.8, 40.0 if is_evolved else 32.0, impact_dmg * 0.46, "molotov_cone", true, is_evolved)
 
-	# 添加燃烧区域
+	# 添加燃烧区域（DOT 跳字本身关闭；命中皮不标暴击，避免持续假暴击）
 	_burn_zones.append({
 		"pos": target,
 		"radius": rad,
@@ -764,14 +806,17 @@ func _fire_molotov(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void
 		"tick": 0.0,
 		"tick_interval": 0.4,
 		"time": burn_time,
-		"is_evolved": is_evolved
+		"is_evolved": is_evolved,
+		"is_crit": false,
+		"spread_chance": _stat("burn_spread_chance"),
+		"can_spread": true,
 	})
 
 # 6. 守卫者 - 旋转挡弹+击退
 func _fire_guardian(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
-	var dmg := (12.0 + lv * 2.5) * ex_mul
-	var rad := 92.0 + lv * 8.0
-	var guardian_count := 2 + int(lv / 2)
+	var dmg := (10.5 + lv * 2.2) * ex_mul
+	var rad := 92.0 + lv * 8.0 + _stat("orbit_radius")
+	var guardian_count := 2 + int(lv / 2) + int(_stat("orbit_count"))
 	if is_evolved:
 		guardian_count += 2
 	
@@ -788,21 +833,23 @@ func _fire_guardian(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> voi
 
 # 7. AB无人机 - 自动跟随攻击
 func _fire_drone(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
-	var drone_count := 2 + int(lv / 3)
+	var drone_count := 2 + int(lv / 3) + int(_stat("orbit_count"))
 	if is_evolved:
 		drone_count += 2
 	
 	# 更新无人机位置
 	while _drone_positions.size() < drone_count:
 		_drone_positions.append(p)
+	while _drone_positions.size() > drone_count:
+		_drone_positions.pop_back()
 	
 	for i in range(drone_count):
 		var angle := _drone_angle + (TAU / drone_count) * i
-		var orbit_radius := 80.0 + lv * 5.0
+		var orbit_radius := 80.0 + lv * 5.0 + _stat("orbit_radius")
 		var drone_pos := p + Vector2(cos(angle), sin(angle)) * orbit_radius
 		_drone_positions[i] = drone_pos
 		
-		var dmg := (10.0 + lv * 2.0) * ex_mul
+		var dmg := (11.5 + lv * 2.2) * ex_mul
 		var rad := 52.0 + lv * 2.0
 		
 		# 显示无人机
@@ -828,8 +875,7 @@ func _fire_drone(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
 		enemy_manager.apply_damage_circle(hit_pos, rad * 0.42, burst_dmg, &"drone_ab")
 		var to_boss: bool = enemy_manager.apply_damage_to_boss(hit_pos, rad * 0.42, burst_dmg)
 		_report_damage("drone_attack", burst_dmg, to_boss, is_evolved, hit_pos)
-		if _weapon_telegraph != null:
-			_weapon_telegraph.add_drone_sweep(drone_pos, hit_pos, 0.14, 4.6)
+		_projectile_line_salvo(drone_pos, hit_pos, "drone_ab", 0.12, 5, lv, is_evolved)
 
 # 8. 回旋镖 - 回旋轨迹
 func _fire_boomerang(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
@@ -838,14 +884,14 @@ func _fire_boomerang(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 		target = p + _rand_vec(170.0)
 	
 	var aim_dir := (Vector2(target) - p).normalized()
-	_projectile_visual(p, aim_dir, "boomerang", 550.0, 0.42, lv, is_evolved)
-	
-	var dmg := (22.0 + lv * 5.0) * ex_mul
-	var rad := 82.0 + lv * 3.0
 	var tg: Vector2 = Vector2(target)
+	var out_arc := p.lerp(tg, 0.62) + aim_dir.orthogonal() * 24.0
+	_projectile_visual_bezier(p, out_arc, tg, "boomerang", 0.28, lv, is_evolved)
+	
+	var dmg := (26.0 + lv * 5.5) * ex_mul
+	var rad := 82.0 + lv * 3.0
 	
 	if _weapon_telegraph != null:
-		_weapon_telegraph.add_boomerang_slice_line(p, tg, 0.24, 4.2)
 		_weapon_telegraph.add_boomerang_crescent(tg, (tg - p).normalized(), 0.2, 1.0 + lv * 0.04)
 	
 	enemy_manager.apply_damage_circle(target, rad, dmg, &"boomerang")
@@ -854,9 +900,10 @@ func _fire_boomerang(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 	_apply_sector_damage(tg, (tg - p).normalized(), rad * 0.72, 28.0, dmg * 0.35, "boomerang_crescent", true, is_evolved)
 	
 	var return_pos: Vector2 = p + (p - target).normalized() * minf(90.0 + lv * 6.0, target.distance_to(p))
+	var ret_arc := tg.lerp(return_pos, 0.58) + (return_pos - tg).orthogonal() * 18.0
+	_projectile_visual_bezier(tg, ret_arc, return_pos, "boomerang", 0.32, lv, is_evolved)
 	
 	if _weapon_telegraph != null:
-		_weapon_telegraph.add_boomerang_slice_line(tg, return_pos, 0.28, 3.5)
 		_weapon_telegraph.add_boomerang_crescent(return_pos, (p - tg).normalized(), 0.22, 0.9 + lv * 0.03)
 	
 	var ret_dmg := dmg * (0.7 if lv < 6 else 0.9)
@@ -868,9 +915,8 @@ func _fire_boomerang(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 		var orbit_pos: Vector2 = p + (tg - p).rotated(PI / 2).normalized() * 100.0
 		enemy_manager.apply_damage_circle(orbit_pos, rad * 0.6, dmg * 0.5, &"boomerang")
 		_report_damage("boomerang_orbit", dmg * 0.5, false, true, orbit_pos)
-		if _weapon_telegraph != null:
-			_weapon_telegraph.add_boomerang_slice_line(return_pos, orbit_pos, 0.22, 3.0)
-			_weapon_telegraph.add_boomerang_slice_line(orbit_pos, p, 0.18, 2.5)
+		_projectile_visual_bezier(return_pos, (return_pos + orbit_pos) * 0.5 + (orbit_pos - return_pos).orthogonal() * 14.0, orbit_pos, "boomerang", 0.22, lv, true)
+		_projectile_visual_bezier(orbit_pos, (orbit_pos + p) * 0.5 + (p - orbit_pos).orthogonal() * 12.0, p, "boomerang", 0.18, lv, true)
 
 # ========== 9. 冰霜领域 - 持续减速周围敌人 ==========
 func _fire_frost_aura(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
@@ -879,7 +925,7 @@ func _fire_frost_aura(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> v
 	
 	# 显示冰霜领域特效
 	if _weapon_telegraph != null:
-		var aura_radius := 140.0 + lv * 15.0
+		var aura_radius := 140.0 + lv * 15.0 + _stat("frost_spread_radius") * 0.5
 		if is_evolved:
 			aura_radius *= 1.5
 		_weapon_telegraph.add_frost_aura_mark(p, aura_radius, 0.4)
@@ -909,20 +955,17 @@ func _fire_stun_mine(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> vo
 	if _weapon_telegraph != null:
 		_weapon_telegraph.add_mine_mark(mine_pos, 45.0 + lv * 3.0, 0.3)
 
-# ========== 11. 治疗光环 - 持续恢复生命 ==========
+# ========== 11. 治疗光环 - 持续恢复生命（不打伤害，不占输出栏位判定见 level_up_weapon）==========
 func _fire_heal_aura(p: Vector2, lv: int, ex_mul: float, is_evolved: bool) -> void:
-	_heal_aura_timer = 0.4  # 每0.4秒治疗一次
-	
-	# 显示治疗光环
+	_heal_aura_timer = 0.4
 	if _weapon_telegraph != null:
 		var heal_radius := 120.0 + lv * 12.0
 		if is_evolved:
 			heal_radius *= 1.4
 		_weapon_telegraph.add_heal_aura_mark(p, heal_radius, 0.3)
-	var heal_wave_dmg := (5.0 + lv * 1.1) * ex_mul
-	enemy_manager.apply_damage_circle(p, 58.0 + lv * 4.0, heal_wave_dmg, &"heal_aura")
-	var heal_boss: bool = enemy_manager.apply_damage_to_boss(p, 58.0 + lv * 4.0, heal_wave_dmg)
-	_report_damage("heal_wave", heal_wave_dmg, heal_boss, is_evolved, p)
+	# 进化时轻量驱散周围，替代原伤害占用定位
+	if is_evolved:
+		EventBus.area_knockback.emit(p, 70.0 + lv * 4.0, 48.0)
 
 # ============================================
 # 辅助函数
@@ -991,7 +1034,7 @@ func _kill_weapon_for_sector_source(source: String) -> StringName:
 	return &""
 
 
-func _apply_sector_damage(center: Vector2, dir: Vector2, radius: float, half_angle_deg: float, dmg: float, source: String, to_boss_check := true, from_fusion := false) -> void:
+func _apply_sector_damage(center: Vector2, dir: Vector2, radius: float, half_angle_deg: float, dmg: float, source: String, to_boss_check := true, from_fusion := false, is_crit: Variant = null) -> void:
 	if radius <= 1.0 or dmg <= 0.01:
 		return
 	var n := dir.normalized() if dir.length() > 0.001 else Vector2.RIGHT
@@ -1006,7 +1049,7 @@ func _apply_sector_damage(center: Vector2, dir: Vector2, radius: float, half_ang
 		if n.dot(v / d) < cos_th:
 			continue
 		enemy_manager.apply_damage_circle(epos, 12.0, dmg, kill_w)
-		_report_damage(source, dmg, false, from_fusion, epos)
+		_report_damage(source, dmg, false, from_fusion, epos, is_crit)
 	if to_boss_check:
 		var boss_pos: Vector2 = enemy_manager.boss_pos()
 		var boss_vec := boss_pos - center
@@ -1014,10 +1057,12 @@ func _apply_sector_damage(center: Vector2, dir: Vector2, radius: float, half_ang
 		if enemy_manager.boss_alive() and boss_dist > 0.01 and boss_dist <= radius and n.dot(boss_vec / boss_dist) >= cos_th:
 			var to_boss: bool = enemy_manager.apply_damage_to_boss(boss_pos, 22.0, dmg)
 			if to_boss:
-				_report_damage(source, dmg, true, from_fusion, boss_pos)
+				_report_damage(source, dmg, true, from_fusion, boss_pos, is_crit)
 
-func _on_fusion_applied(_fid: StringName) -> void:
+func _on_fusion_applied(fid: StringName) -> void:
 	RunStats.fusions += 1
+	if MetaProgress != null and MetaProgress.has_method("mark_fusion_seen"):
+		MetaProgress.mark_fusion_seen(String(fid))
 
 # ============================================
 # 特效更新
@@ -1034,19 +1079,20 @@ func _update_rocket_pending(delta: float) -> void:
 			var damage := float(item["damage"]) * _world_curse_out_damage_mul()
 			var is_evolved: bool = item.get("is_evolved", false)
 			var impact_dir: Vector2 = item.get("dir", Vector2.RIGHT)
+			var rocket_crit: bool = bool(item.get("is_crit", false))
 			
 			# 爆炸伤害
 			enemy_manager.apply_damage_circle(pos, radius, damage, &"rocket")
 			var to_boss: bool = enemy_manager.apply_damage_to_boss(pos, radius, damage)
-			_report_damage("rocket_explode", damage, to_boss, is_evolved, pos)
+			_report_damage("rocket_explode", damage, to_boss, is_evolved, pos, rocket_crit)
 			# 前向扇区冲击波（命中形状差异化）
-			_apply_sector_damage(pos, impact_dir, radius * (1.2 if is_evolved else 1.02), 34.0 if is_evolved else 28.0, damage * 0.34, "rocket_cone", true, is_evolved)
+			_apply_sector_damage(pos, impact_dir, radius * (1.2 if is_evolved else 1.02), 34.0 if is_evolved else 28.0, damage * 0.34, "rocket_cone", true, is_evolved, rocket_crit)
 			
 			# 进化：二次爆炸
 			if is_evolved:
 				var secondary_dmg := damage * 0.4
 				enemy_manager.apply_damage_circle(pos, radius * 1.5, secondary_dmg, &"rocket")
-				_report_damage("rocket_secondary", secondary_dmg, to_boss, true, pos)
+				_report_damage("rocket_secondary", secondary_dmg, to_boss, true, pos, rocket_crit)
 			
 			_rocket_pending.remove_at(i)
 
@@ -1066,7 +1112,27 @@ func _update_burn_zones(delta: float) -> void:
 			
 			enemy_manager.apply_damage_circle(pos, radius, tick_damage, &"molotov")
 			var to_boss: bool = enemy_manager.apply_damage_to_boss(pos, radius, tick_damage)
-			_report_damage("molotov_burn", tick_damage, to_boss, is_evolved, pos)
+			_report_damage("molotov_burn", tick_damage, to_boss, is_evolved, pos, false)
+			# 燃爆专精：有几率向邻格蔓延次级火池（不可再蔓延，防雪崩）
+			if bool(z.get("can_spread", false)) and _burn_zones.size() < 14:
+				var spread_p := float(z.get("spread_chance", 0.0))
+				if spread_p > 0.0 and randf() < spread_p:
+					var ang := randf() * TAU
+					var spread_pos := pos + Vector2(cos(ang), sin(ang)) * (radius * 0.9)
+					_burn_zones.append({
+						"pos": spread_pos,
+						"radius": radius * 0.62,
+						"dps": dps * 0.55,
+						"tick": 0.2,
+						"tick_interval": float(z["tick_interval"]),
+						"time": minf(float(z["time"]), 1.6),
+						"is_evolved": is_evolved,
+						"is_crit": false,
+						"spread_chance": 0.0,
+						"can_spread": false,
+					})
+					if _weapon_telegraph != null:
+						_weapon_telegraph.add_burn_mark(spread_pos, radius * 0.62, 1.2)
 		
 		if float(z["time"]) <= 0.0:
 			_burn_zones.remove_at(i)
@@ -1080,19 +1146,34 @@ func _update_drones(delta: float) -> void:
 	if _drone_angle > TAU:
 		_drone_angle -= TAU
 
-	if level_map.get("drone_ab", 0) <= 0 or _drone_positions.is_empty():
+	if level_map.get("drone_ab", 0) <= 0:
 		return
+	if player == null:
+		return
+
+	var lv := int(level_map["drone_ab"])
+	var is_evolved := lv >= 6
+	var drone_count := 2 + int(lv / 3) + int(_stat("orbit_count"))
+	if is_evolved:
+		drone_count += 2
+	while _drone_positions.size() < drone_count:
+		_drone_positions.append(player.global_position)
+	while _drone_positions.size() > drone_count:
+		_drone_positions.pop_back()
+	var orbit_radius := 80.0 + lv * 5.0 + _stat("orbit_radius")
+	var p := player.global_position
+	for i in range(drone_count):
+		var angle := _drone_angle + (TAU / float(maxi(1, drone_count))) * float(i)
+		_drone_positions[i] = p + Vector2(cos(angle), sin(angle)) * orbit_radius
 
 	_drone_tick -= delta
 	if _drone_tick > 0.0:
 		return
 	_drone_tick = 0.18
 
-	var lv := int(level_map["drone_ab"])
-	var is_evolved := lv >= 6
-	var ex_mul := 1.45 if is_evolved else 1.0
-	var pulse_dmg := (7.0 + lv * 1.6) * ex_mul * _world_curse_out_damage_mul()
-	var pulse_rad := 34.0 + lv * 2.0
+	var ex_mul := _orbit_damage_mul(is_evolved)
+	var pulse_dmg := (8.5 + lv * 1.85) * ex_mul
+	var pulse_rad := 36.0 + lv * 2.2
 
 	for dpos in _drone_positions:
 		var target: Variant = _nearest_enemy_pos(dpos, 120.0 + lv * 10.0)
@@ -1101,9 +1182,8 @@ func _update_drones(delta: float) -> void:
 		var hit_pos: Vector2 = target
 		enemy_manager.apply_damage_circle(hit_pos, pulse_rad, pulse_dmg, &"drone_ab")
 		var to_boss: bool = enemy_manager.apply_damage_to_boss(hit_pos, pulse_rad, pulse_dmg)
-		_report_damage("drone_pulse", pulse_dmg, to_boss, is_evolved, hit_pos)
-		if _weapon_telegraph != null:
-			_weapon_telegraph.add_drone_pulse_beam(dpos, hit_pos, 0.11)
+		_report_damage("drone_pulse", pulse_dmg, to_boss, is_evolved, hit_pos, false)
+		_projectile_line_salvo(dpos, hit_pos, "drone_ab", 0.1, 4, lv, is_evolved)
 
 func _update_guardian(delta: float) -> void:
 	_guardian_angle += 3.0 * delta
@@ -1119,12 +1199,12 @@ func _update_guardian(delta: float) -> void:
 	_guardian_knockback_tick -= delta
 	var lv := int(level_map["guardian"])
 	var is_evolved := lv >= 6
-	var ex_mul := 1.5 if is_evolved else 1.0
-	var dmg := (8.0 + lv * 1.5) * ex_mul * delta * _world_curse_out_damage_mul()  # 每秒伤害
-	var rad := 92.0 + lv * 8.0
+	var ex_mul := _orbit_damage_mul(is_evolved)
+	var dmg := (7.0 + lv * 1.35) * ex_mul * delta  # 每秒伤害（周7下调）
+	var rad := 90.0 + lv * 7.5 + _stat("orbit_radius")
 
 	# 旋转位置计算
-	var guardian_count := 2 + int(lv / 2)
+	var guardian_count := 2 + int(lv / 2) + int(_stat("orbit_count"))
 	if is_evolved:
 		guardian_count += 2
 	if _projectile_layer != null:
@@ -1138,7 +1218,7 @@ func _update_guardian(delta: float) -> void:
 		enemy_manager.apply_damage_circle(guard_pos, 25.0, dmg, &"guardian")
 		var to_boss: bool = enemy_manager.apply_damage_to_boss(guard_pos, 25.0, dmg)
 		if to_boss:
-			_report_damage("guardian_tick", dmg, true, is_evolved, guard_pos)
+			_report_damage("guardian_tick", dmg, true, is_evolved, guard_pos, false)
 		_apply_sector_damage(guard_pos, sweep_dir, 44.0 + lv * 2.5, 24.0, dmg * (0.92 if is_evolved else 0.76), "guardian_slice", true, is_evolved)
 		if _weapon_telegraph != null and (i % 2 == 0 or is_evolved):
 			_weapon_telegraph.add_guardian_slice(guard_pos, sweep_dir, 34.0 + lv * 2.8, 0.12)
@@ -1158,24 +1238,30 @@ func _update_frost_aura(delta: float) -> void:
 	
 	var is_evolved := lv >= 6
 	var p: Vector2 = player.global_position
-	var aura_radius := 140.0 + lv * 15.0
+	var aura_radius := 140.0 + lv * 15.0 + _stat("frost_spread_radius") * 0.5
 	if is_evolved:
 		aura_radius *= 1.5
 	if _projectile_layer != null:
 		_projectile_layer.sync_aura("frost_aura", p, aura_radius, _frost_aura_timer > 0.0, is_evolved)
 	
 	_frost_aura_timer -= delta
+	_frost_freeze_pulse_cd = maxf(0.0, _frost_freeze_pulse_cd - delta)
 	if _frost_aura_timer > 0.0:
-		# 持续造成范围伤害和减速
-		var dmg := (10.0 + lv * 2.5) * delta * _world_curse_out_damage_mul()
-		var slow_factor := 0.3 + lv * 0.05  # 基础减速30%，每级+5%
+		# 持续范围伤害 + 减速；进化才脉冲短冻（不用 slow 比例误当冻结秒数）
+		var dmg := (13.0 + lv * 3.0) * delta * _world_curse_out_damage_mul()
+		var slow_amount := clampf(0.32 + lv * 0.05, 0.32, 0.68)
 		if is_evolved:
-			slow_factor += 0.2  # 进化额外减速20%
-		
-		# 伤害敌人
+			slow_amount = minf(0.75, slow_amount + 0.12)
 		enemy_manager.apply_damage_circle(p, aura_radius, dmg, &"frost_aura")
-		# 冰冻效果
-		enemy_manager.freeze_enemy(p, slow_factor)
+		if enemy_manager.has_method("apply_slow_in_circle"):
+			enemy_manager.apply_slow_in_circle(p, aura_radius, slow_amount, 0.35)
+		# 进化或叠冰域专精时脉冲冻结（专精加时长+扩散）
+		var freeze_pulse := is_evolved or _stat("frost_duration_add") > 0.0
+		if freeze_pulse and _frost_freeze_pulse_cd <= 0.0 and enemy_manager.has_method("freeze_enemy"):
+			_frost_freeze_pulse_cd = 0.45
+			var freeze_dur := 0.28 + lv * 0.03 + _stat("frost_duration_add")
+			var freeze_r := 80.0 + _stat("frost_spread_radius")
+			enemy_manager.freeze_enemy(p, freeze_dur, freeze_r)
 
 # ========== 治疗光环更新 ==========
 func _update_heal_aura(delta: float) -> void:
@@ -1295,11 +1381,15 @@ func _can_emit_fx_for_source(source: String) -> bool:
 	var cd := 0.0
 	match source:
 		"kunai_hit", "kunai_pierce", "kunai_finish":
-			cd = 0.025 * pressure
-		"lightning_hex", "lightning_jump":
-			cd = 0.035 * pressure
+			cd = 0.028 * pressure
+		"lightning_hex", "lightning_jump", "lightning_strike":
+			cd = 0.032 * pressure
+		"quantum_burst", "quantum_hex", "quantum_bounce":
+			cd = 0.038 * pressure
 		"rocket_cone":
 			cd = 0.04 * pressure
+		"boomerang_out", "boomerang_return", "boomerang_orbit":
+			cd = 0.03 * pressure
 		"guardian_tick":
 			cd = 0.08 * pressure
 		"molotov_burn":
@@ -1315,36 +1405,40 @@ func _can_emit_fx_for_source(source: String) -> bool:
 	_fx_source_cooldowns[source] = cd
 	return true
 
-func _report_damage(source: String, amount: float, to_boss: bool, from_fusion: bool, pos: Vector2 = Vector2.ZERO) -> void:
+func _report_damage(source: String, amount: float, to_boss: bool, from_fusion: bool, pos: Vector2 = Vector2.ZERO, is_crit: Variant = null) -> void:
 	RunStats.add_damage_source(source, amount, to_boss, from_fusion)
 	var can_emit_source_fx := _can_emit_fx_for_source(source)
+	var show_as_crit := bool(is_crit) if is_crit != null else _shot_is_crit
 	
-	# ========== 冰冻被动效果 ==========
+	# ========== 冰冻被动效果（含冰域专精扩散）==========
 	if not to_boss and _skill_system and _skill_system.stats.get("freeze_chance", 0.0) > 0:
 		if randf() < float(_skill_system.stats["freeze_chance"]):
 			var freeze_dur := float(_skill_system.stats.get("freeze_duration", 0.0))
 			if freeze_dur > 0:
-				enemy_manager.freeze_enemy(pos, freeze_dur)
+				var freeze_r := 80.0 + float(_skill_system.stats.get("frost_spread_radius", 0.0))
+				enemy_manager.freeze_enemy(pos, freeze_dur, freeze_r)
 	
 	# 触发粒子特效（基于武器类型）
 	if _particle_mgr and amount > 8.0 and pos != Vector2.ZERO and can_emit_source_fx:
 		_trigger_weapon_particles(source, pos)
 		_emit_weapon_sfx(source, pos)
 	if _weapon_telegraph != null and pos != Vector2.ZERO and _should_emit_hit_feedback(source, amount, can_emit_source_fx):
-		var hit_type := _resolve_hit_type(source, amount, to_boss, from_fusion)
-		var intensity := _resolve_hit_intensity(source, amount, to_boss, from_fusion)
-		_weapon_telegraph.add_hit_feedback(pos, _hit_palette_key(source), hit_type, intensity)
+		if _should_emit_hit_feedback_at_pos(pos):
+			var hit_type := _resolve_hit_type(source, amount, to_boss, from_fusion, show_as_crit)
+			var intensity := _resolve_hit_intensity(source, amount, to_boss, from_fusion, show_as_crit)
+			_weapon_telegraph.add_hit_feedback(pos, _hit_palette_key(source), hit_type, intensity, _splatter_dir_at(pos))
+			_register_hit_feedback_pos(pos)
 	_maybe_fusion_spike_feedback(pos, amount, to_boss, from_fusion)
 	_maybe_threat_hit_feedback(pos, amount, to_boss, source)
 	
 	# 伤害跳字（持续DOT/守卫者tick不逐帧刷字，避免UI开销过高）
 	var allow_damage_number := source != "molotov_burn" and source != "guardian_tick"
-	var show_as_crit := to_boss or amount > 50.0 or from_fusion
 	var number_threshold := 5.0
 	if _runtime_pressure_mul() > 1.35 and not to_boss:
 		number_threshold = 9.0
 	if Settings.show_damage_numbers and allow_damage_number and amount > number_threshold and _damage_numbers_this_frame < _max_damage_numbers_per_frame:
 		_damage_numbers_this_frame += 1
+		# 跳字数值 = 真实结算伤害（禁止展示倍率）
 		EventBus.damage_number_spawned.emit(pos, amount, show_as_crit)
 
 
@@ -1385,14 +1479,18 @@ func _hit_tint(source: String) -> Color:
 	var p: Color = cols["primary"]
 	return Color(minf(p.r * 1.06, 1.0), minf(p.g * 1.06, 1.0), minf(p.b * 1.06, 1.0), 1.0)
 
-func _resolve_hit_type(source: String, amount: float, to_boss: bool, from_fusion: bool) -> StringName:
+func _resolve_hit_type(source: String, amount: float, to_boss: bool, from_fusion: bool, is_crit: bool = false) -> StringName:
+	# 暴击皮只跟真实暴击走；禁止用伤害阈值冒充暴击
+	if is_crit:
+		return WeaponTelegraph.HIT_CRIT
 	var forced := String(_feedback_card(source).get("force_hit_type", ""))
 	if forced != "":
 		match forced:
 			"kill":
 				return WeaponTelegraph.HIT_KILL
 			"crit":
-				return WeaponTelegraph.HIT_CRIT
+				# 配置里的 force crit 不得绕过真实判定
+				return WeaponTelegraph.HIT_NORMAL
 			"threat":
 				return WeaponTelegraph.HIT_THREAT
 			_:
@@ -1401,12 +1499,12 @@ func _resolve_hit_type(source: String, amount: float, to_boss: bool, from_fusion
 		return WeaponTelegraph.HIT_THREAT
 	if from_fusion or amount >= 115.0:
 		return WeaponTelegraph.HIT_KILL
-	if amount >= 55.0:
-		return WeaponTelegraph.HIT_CRIT
 	return WeaponTelegraph.HIT_NORMAL
 
-func _resolve_hit_intensity(source: String, amount: float, to_boss: bool, from_fusion: bool) -> float:
+func _resolve_hit_intensity(source: String, amount: float, to_boss: bool, from_fusion: bool, is_crit: bool = false) -> float:
 	var scale := clampf(amount / 70.0, 0.85, 1.65)
+	if is_crit:
+		scale += 0.18
 	if to_boss:
 		scale += 0.2
 	if from_fusion:
@@ -1415,28 +1513,61 @@ func _resolve_hit_intensity(source: String, amount: float, to_boss: bool, from_f
 	return clampf(scale, 0.8, 1.75)
 
 func _should_emit_hit_feedback(source: String, amount: float, source_fx_allowed: bool) -> bool:
-	if amount < 7.0:
+	var min_amount := float(_feedback_card(source).get("min_hit_amount", 12.0))
+	if amount < min_amount:
 		return false
 	if source == "molotov_burn" or source == "guardian_tick":
 		return false
 	if source == "drone_pulse" and amount < 16.0:
 		return false
-	return source_fx_allowed or amount >= 40.0
+	if source == "kunai_hit" and amount < 14.0 and _runtime_pressure_mul() > 1.15:
+		return false
+	return source_fx_allowed or amount >= 42.0
 
 
-func _play_hit_fx_preset(preset_id: String, pos: Vector2, source: String) -> void:
+func _should_emit_hit_feedback_at_pos(pos: Vector2) -> bool:
+	var now := Time.get_ticks_msec() * 0.001
+	for i in range(_hit_feedback_recent.size() - 1, -1, -1):
+		var rec: Dictionary = _hit_feedback_recent[i]
+		if now - float(rec.get("t", 0.0)) > _HIT_FEEDBACK_SPATIAL_WINDOW:
+			_hit_feedback_recent.remove_at(i)
+			continue
+		if pos.distance_squared_to(rec.get("pos", Vector2.ZERO)) <= _HIT_FEEDBACK_SPATIAL_R2:
+			return false
+	return true
+
+
+func _register_hit_feedback_pos(pos: Vector2) -> void:
+	_hit_feedback_recent.append({"pos": pos, "t": Time.get_ticks_msec() * 0.001})
+	if _hit_feedback_recent.size() > 48:
+		_hit_feedback_recent.remove_at(0)
+
+
+func _splatter_dir_at(pos: Vector2) -> Vector2:
+	if player == null or pos == Vector2.ZERO:
+		return Vector2.ZERO
+	var d := pos - player.global_position
+	if d.length_squared() < 4.0:
+		return Vector2.from_angle(randf() * TAU)
+	return d.normalized()
+
+
+func _play_hit_fx_preset(preset_id: String, pos: Vector2, source: String, hit_dir: Vector2 = Vector2.ZERO) -> void:
 	if not _particle_mgr:
 		return
 	var tint := _hit_tint(source)
 	var tint_soft := Color(tint.r, tint.g, tint.b, 0.82)
 	match preset_id:
 		"slash":
-			_particle_mgr.hit_effect(pos, tint_soft)
-			_particle_mgr.kunai_glint(pos, tint)
-			_particle_mgr.shockwave_ring(pos, Color(tint.r * 0.85, tint.g * 0.95, 1.0, 1.0))
-			if randf() < 0.42:
-				_particle_mgr.lightning_spark(pos, Color(0.85, 1.0, 1.0, 1.0))
-			CombatFeedback.shake("minion", 1.65, 0.055)
+			var brief := _runtime_pressure_mul() >= 1.15
+			if brief:
+				_particle_mgr.splatter_hit(pos, tint_soft, hit_dir)
+				if randf() < 0.38:
+					_particle_mgr.kunai_glint(pos, tint)
+			else:
+				_particle_mgr.impact_splash(pos, tint_soft, hit_dir, 1.05, false)
+				_particle_mgr.kunai_glint(pos, tint)
+			CombatFeedback.shake("minion", 1.45 if brief else 1.65, 0.048 if brief else 0.055)
 		"arcane_heavy":
 			_particle_mgr.shockwave_ring(pos, tint)
 			_particle_mgr.magic_burst(pos, tint)
@@ -1457,8 +1588,8 @@ func _play_hit_fx_preset(preset_id: String, pos: Vector2, source: String) -> voi
 			CombatFeedback.shake("hit", 3.55, 0.11)
 			CombatFeedback.flash(Color(0.78, 0.88, 0.48, 1.0), 0.07, "normal")
 		"volt":
+			_particle_mgr.impact_splash(pos, tint, hit_dir, 0.95)
 			_particle_mgr.lightning_spark(pos, tint)
-			_particle_mgr.shockwave_ring(pos, Color(0.75, 0.88, 1.0, 1.0))
 			CombatFeedback.shake("hit", 2.75, 0.085)
 			CombatFeedback.flash(Color(0.32, 0.52, 0.92, 1.0), 0.05, "subtle")
 		"volt_soft":
@@ -1486,13 +1617,12 @@ func _play_hit_fx_preset(preset_id: String, pos: Vector2, source: String) -> voi
 			CombatFeedback.shake("heavy", 4.35, 0.14)
 			CombatFeedback.flash(Color(1.0, 0.58, 0.3, 1.0), 0.06, "normal")
 		"kinetic_ring":
-			_particle_mgr.hit_effect(pos, tint_soft)
-			_particle_mgr.shockwave_ring(pos, Color(tint.r * 0.75, 1.0, tint.b * 0.85, 1.0))
+			_particle_mgr.impact_splash(pos, tint_soft, hit_dir, 1.12)
 			if randf() < 0.48:
 				_particle_mgr.magic_burst(pos, tint_soft)
 			CombatFeedback.shake("hit", 2.35, 0.065)
 		"kinetic_tick":
-			_particle_mgr.hit_effect(pos, tint_soft)
+			_particle_mgr.splatter_hit(pos, tint_soft, hit_dir)
 		"drone_beam":
 			_particle_mgr.lightning_spark(pos, tint)
 			_particle_mgr.magic_burst(pos, tint_soft)
@@ -1526,7 +1656,7 @@ func _play_hit_fx_preset(preset_id: String, pos: Vector2, source: String) -> voi
 
 func _trigger_weapon_particles(source: String, pos: Vector2) -> void:
 	var preset: String = String(_feedback_card(source).get("preset", _DAMAGE_SOURCE_HIT_PRESET.get(source, "generic_light")))
-	_play_hit_fx_preset(preset, pos, source)
+	_play_hit_fx_preset(preset, pos, source, _splatter_dir_at(pos))
 
 
 func _feedback_card(source: String) -> Dictionary:
@@ -1646,7 +1776,54 @@ func _maybe_threat_hit_feedback(pos: Vector2, amount: float, to_boss: bool, sour
 # ============================================
 
 func _projectile_visual(from: Vector2, dir: Vector2, kind: String, speed: float = 600.0, lifetime: float = 0.3, weapon_lv: int = 1, evolved: bool = false) -> void:
-	if _weapon_telegraph != null:
-		_weapon_telegraph.add_projectile(from, dir, kind, speed, lifetime, weapon_lv, evolved)
 	if _projectile_layer != null:
 		_projectile_layer.spawn_projectile(kind, from, dir, speed, lifetime, weapon_lv, evolved)
+	elif _weapon_telegraph != null:
+		_weapon_telegraph.add_projectile(from, dir, kind, speed, lifetime, weapon_lv, evolved)
+
+
+func _volley_count_for_kind(kind: String) -> int:
+	match kind:
+		"kunai":
+			return 4
+		"quantum_ball":
+			return 5
+		"rocket":
+			return 3
+		"molotov":
+			return 3
+		"boomerang":
+			return 4
+		"lightning":
+			return 6
+		"drone_ab":
+			return 4
+		_:
+			return 3
+
+
+func _projectile_line_salvo(from_pos: Vector2, to_pos: Vector2, kind: String, lifetime: float, segments: int, weapon_lv: int = 1, evolved: bool = false) -> void:
+	if _projectile_layer == null:
+		return
+	if _projectile_layer.has_method("spawn_line_salvo"):
+		_projectile_layer.spawn_line_salvo(kind, from_pos, to_pos, lifetime, segments, weapon_lv, evolved)
+
+
+func _projectile_visual_bezier(p0: Vector2, p1: Vector2, p2: Vector2, kind: String, lifetime: float, weapon_lv: int = 1, evolved: bool = false, _final_dir: Vector2 = Vector2.ZERO) -> void:
+	if _projectile_layer != null:
+		if _projectile_layer.has_method("spawn_bezier_volley"):
+			_projectile_layer.spawn_bezier_volley(kind, p0, p1, p2, lifetime, _volley_count_for_kind(kind), weapon_lv, evolved)
+		else:
+			_projectile_layer.spawn_projectile_bezier(kind, p0, p1, p2, lifetime, weapon_lv, evolved)
+	elif _weapon_telegraph != null:
+		_weapon_telegraph.add_kunai_arc_trail(p0, p1, p2, lifetime * 0.55)
+
+
+func _projectile_visual_bezier_cubic(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, kind: String, lifetime: float, weapon_lv: int = 1, evolved: bool = false) -> void:
+	if _projectile_layer != null:
+		if _projectile_layer.has_method("spawn_bezier_cubic_volley"):
+			_projectile_layer.spawn_bezier_cubic_volley(kind, p0, p1, p2, p3, lifetime, _volley_count_for_kind(kind), weapon_lv, evolved)
+		else:
+			_projectile_layer.spawn_projectile_bezier_cubic(kind, p0, p1, p2, p3, lifetime, weapon_lv, evolved)
+	elif _weapon_telegraph != null:
+		_weapon_telegraph.add_kunai_arc_trail(p0, p1, p2, lifetime * 0.42)

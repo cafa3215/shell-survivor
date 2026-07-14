@@ -102,6 +102,9 @@ func _process(delta: float) -> void:
 	var skill_sys = get_parent().get_node_or_null("SkillSystem")
 	if skill_sys and skill_sys.stats.has("pickup_range"):
 		pickup += float(skill_sys.stats["pickup_range"])
+	var g := get_parent()
+	if g != null and g.has_method("get_boss_pickup_siphon_mul"):
+		pickup *= float(g.call("get_boss_pickup_siphon_mul"))
 	
 	for idx in orb_snap:
 		var d := orb_pos[idx].distance_to(p)
@@ -114,7 +117,6 @@ func _process(delta: float) -> void:
 		# 拾取：磁吸后需用新距离判定，避免本帧已吸入范围内却未拾取
 		var d_after := orb_pos[idx].distance_to(p)
 		if d_after < COLLECT_RADIUS:
-			var g := get_parent()
 			if g != null and g.has_method("is_curse_blocking_xp_pickup") and bool(g.call("is_curse_blocking_xp_pickup")):
 				var outward := orb_pos[idx] - p
 				if outward.length() < 2.0:

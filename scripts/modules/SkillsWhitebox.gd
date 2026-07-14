@@ -127,6 +127,9 @@ func _build_battle() -> void:
 
 	_em = g.get_node_or_null("EnemyManager")
 	_player = g.get_node_or_null("Player") as Node2D
+	var hud := g.get_node_or_null("HUD")
+	if hud != null and hud.has_method("enter_module_demo_overlay"):
+		hud.call("enter_module_demo_overlay")
 	EventBus.game_started.emit()
 	_status.text = "状态：就绪。可选择模式（建议先开始新批次 F11）。"
 	if _whitebox_seed >= 0:

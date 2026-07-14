@@ -520,9 +520,8 @@ func recent_preset_stability(n: int) -> Array[String]:
 	return out
 
 func recommended_preset_summary() -> String:
-	if TACTIC_PRESETS.has(_tactic_preset):
-		return "推荐预设: %s" % String(TACTIC_PRESETS[_tactic_preset]["label"])
-	return "推荐预设: 均衡战士"
+	# 战术预设仅内部诊断匹配，不再对外展示成可选手动设定
+	return ""
 
 
 func menu_next_run_hint() -> String:

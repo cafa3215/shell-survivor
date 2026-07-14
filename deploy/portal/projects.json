@@ -2,17 +2,37 @@
 	{
 		"id": "story",
 		"title": "OUR STORY",
-		"desc": "属于我们的回忆馆 · 登录后浏览与管理回忆内容。",
+		"desc": "双人私密情侣纪念馆 · 琉光画廊与樱语博物馆，珍藏属于我们的回忆。",
 		"tag": "回忆馆",
 		"path": "/story/",
+		"color": "#f472b6",
 		"enabled": true
 	},
 	{
 		"id": "game",
 		"title": "Shell Survivor",
-		"desc": "俯视角生存射击 · 手机横屏，左下摇杆移动，右下冲刺。",
+		"desc": "俯视角生存射击 · 11 种武器、融合进化、BOSS 战，支持手机横屏游玩。",
 		"tag": "游戏",
 		"path": "/game/",
+		"color": "#5eead4",
 		"enabled": true
+	},
+	{
+		"id": "muse",
+		"title": "Creative Muse",
+		"desc": "AI 创意引擎 · 输入词语发散思维图谱，收敛生成脚本、文案与产品方案。",
+		"tag": "AI 工具",
+		"path": "/muse/",
+		"color": "#a78bfa",
+		"enabled": false
+	},
+	{
+		"id": "housing",
+		"title": "郑州房价预测",
+		"desc": "基于 CatBoost 的二手房单价预测系统，输入房屋特征即可估算价格。",
+		"tag": "机器学习",
+		"path": "/housing/",
+		"color": "#fbbf24",
+		"enabled": false
 	}
 ]

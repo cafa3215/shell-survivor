@@ -1,0 +1,37 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"installCommand": "echo skip",
+	"buildCommand": "echo skip",
+	"outputDirectory": "build/web",
+	"headers": [
+		{
+			"source": "/game/(.*)\\.wasm",
+			"headers": [
+				{ "key": "Content-Type", "value": "application/wasm" },
+				{ "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+				{ "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" },
+				{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+			]
+		},
+		{
+			"source": "/game/(.*)\\.pck",
+			"headers": [
+				{ "key": "Content-Type", "value": "application/octet-stream" },
+				{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+			]
+		},
+		{
+			"source": "/game/(.*)\\.js",
+			"headers": [
+				{ "key": "Content-Type", "value": "application/javascript" },
+				{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+			]
+		},
+		{
+			"source": "/game/index.html",
+			"headers": [
+				{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+			]
+		}
+	]
+}

@@ -28,10 +28,10 @@ const _ENTITY_PROJECTILE_KINDS := {
 const _BASE_MAX_HIT_PULSES := 110
 const _BASE_MAX_TRAIL_POINTS := 280
 const _HIT_STYLE := {
-	HIT_NORMAL: {"duration": 0.154, "radius_mul": 0.9, "line_mul": 1.02, "fill": 0.094, "line": 0.58},
-	HIT_CRIT: {"duration": 0.206, "radius_mul": 1.1, "line_mul": 1.38, "fill": 0.122, "line": 0.84},
-	HIT_KILL: {"duration": 0.24, "radius_mul": 1.3, "line_mul": 1.55, "fill": 0.146, "line": 0.92},
-	HIT_THREAT: {"duration": 0.222, "radius_mul": 1.22, "line_mul": 1.48, "fill": 0.136, "line": 0.9}
+	HIT_NORMAL: {"duration": 0.088, "radius_mul": 0.82, "line_mul": 0.9, "fill": 0.078, "line": 0.5},
+	HIT_CRIT: {"duration": 0.168, "radius_mul": 1.02, "line_mul": 1.22, "fill": 0.108, "line": 0.76},
+	HIT_KILL: {"duration": 0.2, "radius_mul": 1.22, "line_mul": 1.42, "fill": 0.132, "line": 0.88},
+	HIT_THREAT: {"duration": 0.188, "radius_mul": 1.14, "line_mul": 1.36, "fill": 0.124, "line": 0.86}
 }
 const _TIER_NORMAL := &"normal"
 const _TIER_CRIT := &"crit"
@@ -160,7 +160,7 @@ func _tick_projectiles(delta: float) -> void:
 		}, _BASE_MAX_TRAIL_POINTS)
 		_projectiles[i] = p
 
-func add_hit_feedback(pos: Vector2, weapon_kind: String, hit_type: StringName = HIT_NORMAL, intensity: float = 1.0) -> void:
+func add_hit_feedback(pos: Vector2, weapon_kind: String, hit_type: StringName = HIT_NORMAL, intensity: float = 1.0, hit_dir: Vector2 = Vector2.ZERO) -> void:
 	if pos == Vector2.ZERO:
 		return
 	var kind := hit_type if _HIT_STYLE.has(hit_type) else HIT_NORMAL
@@ -183,7 +183,11 @@ func add_hit_feedback(pos: Vector2, weapon_kind: String, hit_type: StringName = 
 		"line_w": line_width,
 		"fill_mul": float(style["fill"]),
 		"line_mul": float(style["line"]),
-		"variation": variation
+		"variation": variation,
+		"weapon_kind": weapon_kind,
+		"hit_type": kind,
+		"splatter_seed": randf() * TAU,
+		"hit_dir": hit_dir
 	}, _BASE_MAX_HIT_PULSES)
 
 func add_kill_feedback(pos: Vector2, tier: StringName, combo_count: int = 0, boss_phase: int = 0, killing_weapon: StringName = &"") -> void:
@@ -352,6 +356,35 @@ func add_kunai_trail(from_pos: Vector2, to_pos: Vector2) -> void:
 			"from": from_pos - perp * 0.35, "to": to_pos - perp * 0.35, "time": 0.2, "max_time": 0.2,
 			"width": 1.2, "variation": V_THREAT, "is_kunai": true
 		})
+
+
+func add_kunai_arc_trail(p0: Vector2, p1: Vector2, p2: Vector2, duration: float = 0.22) -> void:
+	var samples := 10
+	var prev := p0
+	var trail_c := WeaponVisualRegistry.trail("kunai")
+	for i in range(1, samples + 1):
+		var t := float(i) / float(samples)
+		var u := 1.0 - t
+		var pt := u * u * p0 + 2.0 * u * t * p1 + t * t * p2
+		_capped_append(_chain_marks, {
+			"from": prev,
+			"to": pt,
+			"time": duration,
+			"max_time": maxf(0.06, duration),
+			"width": lerpf(2.6, 1.2, t),
+			"variation": V_THREAT,
+			"is_kunai": true,
+			"is_arc": true,
+			"tint": trail_c
+		}, _BASE_MAX_TRAIL_POINTS)
+		_capped_append(_trail_history, {
+			"pos": pt,
+			"time": duration * 0.85,
+			"max_time": maxf(0.06, duration),
+			"variation": V_THREAT,
+			"weapon": "kunai"
+		}, _BASE_MAX_TRAIL_POINTS)
+		prev = pt
 
 func add_kunai_impact_cross(pos: Vector2, dir: Vector2, duration: float, scale: float = 1.0) -> void:
 	var n := dir.normalized() if dir.length() > 0.001 else Vector2.RIGHT
@@ -522,6 +555,8 @@ func _weapon_kill_primary(wid: StringName) -> Color:
 	if WEAPON_COLORS.has(key):
 		var d: Dictionary = WEAPON_COLORS[key]
 		return d["primary"] as Color
+	if WeaponVisualRegistry.THEMES.has(key):
+		return WeaponVisualRegistry.primary(key)
 	return Color(1.0, 0.58, 0.34, 1.0)
 
 
@@ -610,16 +645,13 @@ func _draw_kunai_beam(mark: Dictionary) -> void:
 	var mt := maxf(0.01, float(mark.get("max_time", 0.01)))
 	var a := clampf(t / mt, 0.0, 1.0)
 	var c := _color_for_variation(StringName(mark.get("variation", V_THREAT)))
+	if mark.has("tint"):
+		c = (mark.get("tint") as Color).lerp(c, 0.35)
+	var acc := WeaponVisualRegistry.accent("kunai")
 	var lw := maxf(1.0, float(mark.get("width", 2.0)))
-	draw_line(from_p, to_p, _with_alpha(c, 0.62 * a), lw)
-	draw_line(from_p, to_p, _with_alpha(Color(0.86, 0.97, 1.0, 1.0), 0.35 * a), lw + 1.2)
-	var dir := to_p - from_p
-	var len := dir.length()
-	if len > 4.0:
-		var n := dir / len
-		var tip := to_p
-		var tail := to_p - n * minf(8.0, len * 0.3)
-		draw_line(tail, tip, _with_alpha(Color(0.95, 1.0, 1.0, 1.0), 0.48 * a), maxf(1.0, lw + 1.6))
+	draw_line(from_p, to_p, _with_alpha(c.darkened(0.25), 0.48 * a), lw + 1.4)
+	draw_line(from_p, to_p, _with_alpha(c, 0.68 * a), lw)
+	draw_line(from_p, to_p, _with_alpha(acc, 0.32 * a), maxf(1.0, lw * 0.55))
 
 func _draw_molotov_flash(mark: Dictionary) -> void:
 	var p: Vector2 = mark.get("pos", Vector2.ZERO)
@@ -784,14 +816,37 @@ func _draw_hit_pulse(mark: Dictionary) -> void:
 	var variation := StringName(mark.get("variation", V_WARNING))
 	var tier := _tier_for_variation(variation)
 	var c := _color_for_variation(variation)
+	var weapon_key := String(mark.get("weapon_kind", ""))
+	if weapon_key != "" and WeaponVisualRegistry.THEMES.has(weapon_key):
+		var wm := WeaponVisualRegistry.primary(weapon_key)
+		c = c.lerp(wm, 0.42)
+	var sec := WeaponVisualRegistry.secondary(weapon_key) if weapon_key != "" else c.darkened(0.35)
+	var acc := WeaponVisualRegistry.accent(weapon_key) if weapon_key != "" else Color.WHITE
 	var radius := float(mark.get("radius", 12.0))
 	var line_width := float(mark.get("line_w", 2.0)) * _tier_mul(tier, "width")
 	var fill_mul := float(mark.get("fill_mul", 0.12))
 	var line_mul := float(mark.get("line_mul", 0.6))
 	var expand := (1.0 - a) * 10.0
-	draw_circle(pos, radius + expand * 0.35, _with_alpha(c, fill_mul * a * _tier_mul(tier, "fill")))
+	var life := 1.0 - a
+	draw_circle(pos, radius + expand * 0.35, _with_alpha(c.lerp(sec, 0.35), fill_mul * a * _tier_mul(tier, "fill")))
 	draw_arc(pos, radius + expand, 0.0, TAU, 30, _with_alpha(c, line_mul * a * _tier_mul(tier, "line")), line_width)
-	draw_arc(pos, radius * 0.72 + expand * 0.45, 0.0, TAU, 20, _with_alpha(c, line_mul * a * 0.72 * _tier_mul(tier, "line")), maxf(1.0, line_width * 0.72))
+	draw_arc(pos, radius * 0.72 + expand * 0.45, 0.0, TAU, 20, _with_alpha(acc, line_mul * a * 0.72 * _tier_mul(tier, "line")), maxf(1.0, line_width * 0.72))
+	var seed := float(mark.get("splatter_seed", 0.0))
+	var hit_dir: Vector2 = mark.get("hit_dir", Vector2.ZERO)
+	var dir_bias := hit_dir.normalized() if hit_dir.length_squared() > 0.01 else Vector2.ZERO
+	var hit_type := StringName(mark.get("hit_type", HIT_NORMAL))
+	var shard_n := 3 if hit_type == HIT_NORMAL else 5
+	for i in range(shard_n):
+		var ang := seed + TAU * float(i) / float(shard_n) + sin(life * 8.0 + float(i)) * 0.22
+		if dir_bias.length_squared() > 0.01:
+			var base_ang := dir_bias.angle()
+			ang = base_ang + (ang - base_ang) * 0.52 + sin(life * 6.0 + float(i) * 1.2) * 0.38
+		var len := radius * (0.55 + life * 0.75) * (0.82 + float(i) * 0.06)
+		var shard_from := pos + Vector2(cos(ang), sin(ang)) * (radius * 0.18)
+		var shard_to := pos + Vector2(cos(ang), sin(ang)) * len
+		var shard_col := c.lerp(acc, 0.25 + float(i) * 0.08).lerp(sec, 0.18)
+		draw_line(shard_from, shard_to, _with_alpha(shard_col, 0.52 * a), maxf(1.0, line_width * 0.55))
+		draw_circle(shard_to, 1.2 + life * 0.8, _with_alpha(acc, 0.38 * a))
 
 func _draw_kill_weapon_kunai(mark: Dictionary) -> void:
 	var p: Vector2 = mark.get("pos", Vector2.ZERO)
@@ -1378,8 +1433,12 @@ func _draw() -> void:
 	for t in _trail_history:
 		var pos2: Vector2 = t.get("pos", Vector2.ZERO)
 		var rt := clampf(float(t.get("time", 0.0)) / maxf(0.01, float(t.get("max_time", 0.01))), 0.0, 1.0)
+		var wkey := String(t.get("weapon", ""))
 		var c2 := _color_for_variation(StringName(t.get("variation", V_THREAT)))
+		if wkey != "":
+			c2 = c2.lerp(WeaponVisualRegistry.trail(wkey), 0.55)
 		draw_circle(pos2, 3.2, _with_alpha(c2, rt * 0.36))
+		draw_circle(pos2, 1.4, _with_alpha(WeaponVisualRegistry.accent(wkey) if wkey != "" else c2, rt * 0.22))
 	for h in _hit_pulses:
 		_draw_hit_pulse(h)
 	for k in _kill_bursts:

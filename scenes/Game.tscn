@@ -144,6 +144,7 @@ offset_bottom = 600.0
 color = Color(0.06, 0.09, 0.16, 0.2)
 
 [node name="ArenaLineTop" type="ColorRect" parent="World"]
+visible = false
 offset_left = -900.0
 offset_top = -600.0
 offset_right = 900.0
@@ -151,6 +152,7 @@ offset_bottom = -596.0
 color = Color(0.38, 0.4, 0.44, 0.72)
 
 [node name="ArenaLineBottom" type="ColorRect" parent="World"]
+visible = false
 offset_left = -900.0
 offset_top = 596.0
 offset_right = 900.0
@@ -158,6 +160,7 @@ offset_bottom = 600.0
 color = Color(0.38, 0.4, 0.44, 0.72)
 
 [node name="ArenaLineLeft" type="ColorRect" parent="World"]
+visible = false
 offset_left = -900.0
 offset_top = -600.0
 offset_right = -896.0
@@ -165,6 +168,7 @@ offset_bottom = 600.0
 color = Color(0.38, 0.4, 0.44, 0.72)
 
 [node name="ArenaLineRight" type="ColorRect" parent="World"]
+visible = false
 offset_left = 896.0
 offset_top = -600.0
 offset_right = 900.0
@@ -172,6 +176,7 @@ offset_bottom = 600.0
 color = Color(0.38, 0.4, 0.44, 0.72)
 
 [node name="ArenaGlowTop" type="ColorRect" parent="World"]
+visible = false
 offset_left = -900.0
 offset_top = -606.0
 offset_right = 900.0
@@ -179,6 +184,7 @@ offset_bottom = -600.0
 color = Color(0.12, 0.13, 0.16, 0.22)
 
 [node name="ArenaGlowBottom" type="ColorRect" parent="World"]
+visible = false
 offset_left = -900.0
 offset_top = 600.0
 offset_right = 900.0
@@ -186,6 +192,7 @@ offset_bottom = 606.0
 color = Color(0.12, 0.13, 0.16, 0.22)
 
 [node name="ArenaGlowLeft" type="ColorRect" parent="World"]
+visible = false
 offset_left = -906.0
 offset_top = -600.0
 offset_right = -900.0
@@ -193,6 +200,7 @@ offset_bottom = 600.0
 color = Color(0.12, 0.13, 0.16, 0.22)
 
 [node name="ArenaGlowRight" type="ColorRect" parent="World"]
+visible = false
 offset_left = 900.0
 offset_top = -600.0
 offset_right = 906.0
@@ -200,6 +208,7 @@ offset_bottom = 600.0
 color = Color(0.12, 0.13, 0.16, 0.22)
 
 [node name="ArenaCornerTL" type="ColorRect" parent="World"]
+visible = false
 offset_left = -920.0
 offset_top = -620.0
 offset_right = -896.0
@@ -207,6 +216,7 @@ offset_bottom = -596.0
 color = Color(0.52, 0.4, 0.26, 0.78)
 
 [node name="ArenaCornerTR" type="ColorRect" parent="World"]
+visible = false
 offset_left = 896.0
 offset_top = -620.0
 offset_right = 920.0
@@ -214,6 +224,7 @@ offset_bottom = -596.0
 color = Color(0.52, 0.4, 0.26, 0.78)
 
 [node name="ArenaCornerBL" type="ColorRect" parent="World"]
+visible = false
 offset_left = -920.0
 offset_top = 596.0
 offset_right = -896.0
@@ -221,6 +232,7 @@ offset_bottom = 620.0
 color = Color(0.52, 0.4, 0.26, 0.78)
 
 [node name="ArenaCornerBR" type="ColorRect" parent="World"]
+visible = false
 offset_left = 896.0
 offset_top = 596.0
 offset_right = 920.0

@@ -15,10 +15,6 @@ var turn_accel := 2100.0
 const _VEL_RESP_LAMBDA := 14.5
 const _VEL_BRAKE_LAMBDA := 21.0
 const _VEL_STOP_EPS := 1.15
-const _ARENA_HALF_W := 900.0
-const _ARENA_HALF_H := 600.0
-const _PLAYER_BOUND_MARGIN := 60.0
-const _EDGE_SOFT_ZONE := 34.0
 var max_hp := 100.0
 var hp := 100.0
 var velocity := Vector2.ZERO
@@ -66,9 +62,19 @@ var _tex_attack: Texture2D
 var _tex_hit: Texture2D
 var _pose_attack_t: float = 0.0
 var _pose_hit_t: float = 0.0
-const _POSE_ATTACK_SEC: float = 0.09
-const _POSE_HIT_SEC: float = 0.16
+const _POSE_ATTACK_SEC: float = 0.14
+const _POSE_HIT_SEC: float = 0.22
+var _pose_overlay: Sprite2D = null
+var _hit_knock_offset: Vector2 = Vector2.ZERO
+var _hit_knock_dir: Vector2 = Vector2.ZERO
 var _fidelity_motion_blend: float = 0.0
+## 外部整帧立绘（非骨架拼贴）：保形模式下避免切换跑步条带导致姿态跳变
+var _external_portrait_sprite: bool = false
+var _dash_pose_blend: float = 0.0
+var _dash_ghost_timer: float = 0.0
+var _dash_ghost_layer: Node2D = null
+const _DASH_GHOST_INTERVAL := 0.045
+const _DASH_LEAN_DEG := 4.8
 
 ## 武器挂载：沿自动瞄准方向前伸 + 侧向偏移（俯视「持械手」），与 WeaponSystem.get_auto_weapon_aim_dir / 苦无发射原点一致
 const _WEAPON_HAND_ALONG_AIM := 18.0
@@ -108,10 +114,12 @@ var _use_body_rig: bool = false
 @onready var enemy_manager: Node = get_parent().get_node_or_null("EnemyManager")
 @onready var camera: Camera2D = $Camera2D if has_node("Camera2D") else null
 @onready var damage_flash: ColorRect = $FlashLayer/DamageFlash if has_node("FlashLayer/DamageFlash") else null
-var _cam_smooth_speed := 11.0
 var _has_transformed_this_run: bool = false
 var _run_archetype_id := ""
 var _archetype_move_speed_mul := 1.0
+## 地图规则场：移速倍率 + 拉力（毒圈/移动安全区）
+var _map_move_mul := 1.0
+var _map_pull_vel := Vector2.ZERO
 var _archetype_kill_heal_flat := 0.0
 var _archetype_guardian_fx_cd := 0.0
 var _archetype_assault_fx_cd := 0.0
@@ -139,36 +147,24 @@ func _ready() -> void:
 		body_rig.set_form(PlayerBodyRig.RigForm.BASE)
 	call_deferred("_build_player_texture")
 	call_deferred("_ensure_depth_shadow")
+	call_deferred("_ensure_dash_ghost_layer")
+	call_deferred("_ensure_pose_overlay")
 	if not fidelity_mode_enabled:
 		call_deferred("_ensure_energy_edge")
-	call_deferred("_setup_camera_limits")
+	call_deferred("_configure_camera_follow")
+	if not get_viewport().size_changed.is_connected(_configure_camera_follow):
+		get_viewport().size_changed.connect(_configure_camera_follow)
 	rotation = 0.0
 
 
-func _setup_camera_limits() -> void:
+func _configure_camera_follow() -> void:
 	if camera == null:
 		return
-	var vr := get_viewport_rect()
-	if vr.size.x <= 1.0 or vr.size.y <= 1.0:
-		return
-	var half_w := vr.size.x * 0.5 * camera.zoom.x
-	var half_h := vr.size.y * 0.5 * camera.zoom.y
-	var left := -_ARENA_HALF_W + half_w
-	var right := _ARENA_HALF_W - half_w
-	var top := -_ARENA_HALF_H + half_h
-	var bottom := _ARENA_HALF_H - half_h
-	if left > right:
-		var mid_x := (left + right) * 0.5
-		left = mid_x
-		right = mid_x
-	if top > bottom:
-		var mid_y := (top + bottom) * 0.5
-		top = mid_y
-		bottom = mid_y
-	camera.limit_left = int(floor(left))
-	camera.limit_right = int(ceil(right))
-	camera.limit_top = int(floor(top))
-	camera.limit_bottom = int(ceil(bottom))
+	# 相机挂在 Player 下：limit 会把镜头锁在边界内，角色却能继续移动 → 移出屏幕
+	camera.limit_enabled = false
+	camera.position = Vector2.ZERO
+	camera.position_smoothing_enabled = false
+	camera.position_smoothing_speed = 0.0
 
 
 func _on_skill_vertex_reached(kind: StringName, id: StringName) -> void:
@@ -187,6 +183,11 @@ func _on_skill_vertex_reached(kind: StringName, id: StringName) -> void:
 
 func _on_dash_requested_ui() -> void:
 	_dash_ui_request = true
+
+func set_map_move_field(move_mul: float, pull_vel: Vector2 = Vector2.ZERO) -> void:
+	_map_move_mul = clampf(move_mul, 0.45, 1.35)
+	_map_pull_vel = pull_vel
+
 
 func set_kill_momentum_mul(mul: float) -> void:
 	_kill_momentum_mul = clampf(mul, 1.0, 1.0 + GameDB.DC_KILL_STREAK_SPEED_CAP)
@@ -217,6 +218,7 @@ func _player_png_has_opaque_sprite(img: Image) -> bool:
 
 
 func _build_player_texture() -> void:
+	_external_portrait_sprite = false
 	_tex_idle = null
 	_tex_run_strip = null
 	_tex_turn_strip = null
@@ -236,8 +238,10 @@ func _build_player_texture() -> void:
 			ext_img = _strip_photo_background(ext_img)
 		var ext_tex := ImageTexture.create_from_image(ext_img)
 		_tex_idle = ext_tex
-		_try_bind_run_strip(ext_img)
+		_external_portrait_sprite = true
+		# 保形立绘与跑步条带姿态/比例易不一致，仅非保形模式才绑定条带动画。
 		if not fidelity_mode_enabled:
+			_try_bind_run_strip(ext_img)
 			_try_bind_turn_strip(ext_img)
 		_try_bind_pose_textures(ext_img)
 		# 外部角色图使用“整帧驱动”，避免分片拼贴导致的人体割裂感。
@@ -549,6 +553,97 @@ func _try_bind_turn_strip(idle_img: Image) -> void:
 	_turn_frame_h = ih
 
 
+func is_dashing() -> bool:
+	return _dash_active
+
+
+func _ensure_dash_ghost_layer() -> void:
+	if _dash_ghost_layer != null:
+		return
+	_dash_ghost_layer = Node2D.new()
+	_dash_ghost_layer.name = "DashGhostLayer"
+	_dash_ghost_layer.z_index = -1
+	add_child(_dash_ghost_layer)
+
+
+func _spawn_dash_sprite_ghost() -> void:
+	if _use_body_rig or _dash_ghost_layer == null:
+		return
+	var src: Sprite2D = $Sprite2D
+	if src == null or src.texture == null:
+		return
+	var ghost := Sprite2D.new()
+	ghost.texture = src.texture
+	ghost.region_enabled = src.region_enabled
+	ghost.region_rect = src.region_rect
+	ghost.flip_h = src.flip_h
+	ghost.scale = src.scale * 0.97
+	ghost.rotation = src.rotation
+	ghost.global_position = src.global_position
+	ghost.modulate = Color(0.42, 0.84, 1.0, 0.38)
+	ghost.z_index = -1
+	_dash_ghost_layer.add_child(ghost)
+	var tw := ghost.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ghost, "modulate:a", 0.0, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ghost, "scale", ghost.scale * 0.9, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_callback(ghost.queue_free)
+
+
+func _portrait_motion_locked() -> bool:
+	return _external_portrait_sprite and fidelity_mode_enabled
+
+
+func _apply_external_portrait_motion(sp: Sprite2D, delta: float) -> void:
+	# 保形立绘：只用缩放呼吸/步态，不用 offset 平移整层。
+	sp.offset = Vector2.ZERO
+	var moving := velocity.length() > _RUN_ANIM_MIN_SPEED and _fidelity_motion_blend > 0.05
+	if moving:
+		var step_mul := clampf(velocity.length() / 175.0, 0.52, 1.08)
+		_run_anim_accum += delta * _RUN_ANIM_FPS * step_mul * lerpf(0.5, 0.88, _fidelity_motion_blend)
+		var step := sin(_run_anim_accum * PI * 2.0)
+		var sx := _saved_sprite_scale.x * lerpf(1.0, 1.014, _fidelity_motion_blend) * (1.0 + step * 0.007)
+		var sy := _saved_sprite_scale.y * lerpf(1.0, 0.986, _fidelity_motion_blend) * (1.0 - step * 0.005)
+		sp.scale = sp.scale.lerp(Vector2(sx, sy), 0.15)
+	else:
+		_run_anim_accum = lerpf(_run_anim_accum, 0.0, 0.18)
+		var breath := sin(_idle_breath_t * 1.85)
+		var sx_i := _saved_sprite_scale.x * (1.0 + breath * 0.007)
+		var sy_i := _saved_sprite_scale.y * (1.0 - breath * 0.011)
+		sp.scale = sp.scale.lerp(Vector2(sx_i, sy_i), 0.13)
+
+
+func _tick_dash_sprite_fx(sp: Sprite2D, delta: float) -> void:
+	var target := 1.0 if _dash_active else 0.0
+	_dash_pose_blend = lerpf(_dash_pose_blend, target, delta * (18.0 if _dash_active else 12.0))
+	if _dash_active:
+		_dash_ghost_timer -= delta
+		if _dash_ghost_timer <= 0.0:
+			_dash_ghost_timer = _DASH_GHOST_INTERVAL
+			_spawn_dash_sprite_ghost()
+	elif _dash_ghost_timer > 0.0:
+		_dash_ghost_timer = 0.0
+	if _dash_pose_blend < 0.01:
+		sp.rotation = lerpf(sp.rotation, 0.0, 0.2)
+		return
+	var dir := _dash_dir
+	if dir.length_squared() < 0.01:
+		dir = velocity
+	if dir.length_squared() < 0.01:
+		dir = Vector2(_last_horiz_facing, 0.0)
+	dir = dir.normalized()
+	if not _portrait_motion_locked():
+		var lean_px := Vector2(dir.x * 3.2, dir.y * 1.8) * _dash_pose_blend
+		sp.offset += lean_px
+		var lean_rot := deg_to_rad(_DASH_LEAN_DEG) * dir.x * _dash_pose_blend
+		sp.rotation = lerpf(sp.rotation, lean_rot, 0.28)
+	var stretch := Vector2(
+		lerpf(1.0, 1.045, _dash_pose_blend),
+		lerpf(1.0, 0.94, _dash_pose_blend)
+	)
+	sp.scale = Vector2(sp.scale.x * stretch.x, sp.scale.y * stretch.y)
+
+
 func _play_dash_scale_punch() -> void:
 	if _use_body_rig and body_rig:
 		body_rig.play_dash_scale_punch()
@@ -564,11 +659,112 @@ func _play_dash_scale_punch() -> void:
 func notify_weapon_fired(_wid: StringName) -> void:
 	if is_dead:
 		return
-	if not _use_body_rig and _tex_attack == null:
-		return
 	if _pose_hit_t > 0.0:
 		return
 	_pose_attack_t = _POSE_ATTACK_SEC
+
+
+func _pose_envelope(remaining: float, total: float, in_ratio: float, out_ratio: float) -> float:
+	if total <= 0.001 or remaining <= 0.0:
+		return 0.0
+	var elapsed := total - remaining
+	var in_t := total * in_ratio
+	var out_t := total * out_ratio
+	if elapsed < in_t:
+		return clampf(elapsed / maxf(in_t, 0.001), 0.0, 1.0)
+	if remaining < out_t:
+		return clampf(remaining / maxf(out_t, 0.001), 0.0, 1.0)
+	return 1.0
+
+
+func _pose_hit_blend() -> float:
+	return _pose_envelope(_pose_hit_t, _POSE_HIT_SEC, 0.24, 0.42)
+
+
+func _pose_attack_blend() -> float:
+	return _pose_envelope(_pose_attack_t, _POSE_ATTACK_SEC, 0.28, 0.45)
+
+
+func _estimate_hit_direction() -> Vector2:
+	if enemy_manager != null and enemy_manager.has_method("get_closest_enemy_pos"):
+		var nearest: Variant = enemy_manager.call("get_closest_enemy_pos", global_position, 520.0)
+		if nearest is Vector2:
+			var away: Vector2 = global_position - nearest
+			if away.length_squared() > 16.0:
+				return away.normalized()
+	if velocity.length_squared() > 144.0:
+		return -velocity.normalized()
+	return Vector2(-_last_horiz_facing, -0.12).normalized()
+
+
+func _ensure_pose_overlay() -> void:
+	if _pose_overlay != null:
+		return
+	var sp: Sprite2D = $Sprite2D
+	if sp == null:
+		return
+	_pose_overlay = Sprite2D.new()
+	_pose_overlay.name = "PoseOverlay"
+	_pose_overlay.z_index = 1
+	_pose_overlay.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	sp.add_child(_pose_overlay)
+
+
+func _get_weapon_aim_dir() -> Vector2:
+	var aim := Vector2.ZERO
+	if weapon_system != null and weapon_system.has_method("get_auto_weapon_aim_dir"):
+		aim = weapon_system.call("get_auto_weapon_aim_dir", global_position) as Vector2
+	if aim.length_squared() < 0.0004:
+		aim = InputManager.get_aim_direction(global_position)
+	return aim
+
+
+func _apply_pose_sprite_fx(sp: Sprite2D, delta: float) -> void:
+	_ensure_pose_overlay()
+	if _pose_overlay == null:
+		return
+	_pose_overlay.flip_h = sp.flip_h
+	_pose_overlay.scale = sp.scale
+	_pose_overlay.rotation = sp.rotation
+	_pose_overlay.offset = sp.offset
+	var hit_w := _pose_hit_blend()
+	var atk_w := 0.0 if hit_w > 0.01 else _pose_attack_blend()
+	if hit_w > 0.01:
+		_hit_knock_offset = _hit_knock_offset.lerp(_hit_knock_dir * 6.5, 1.0 - exp(-delta * 22.0))
+		if not _portrait_motion_locked():
+			sp.offset += _hit_knock_offset * hit_w
+		if _tex_hit != null:
+			_pose_overlay.texture = _tex_hit
+			_pose_overlay.region_enabled = false
+			_pose_overlay.modulate = Color(1.0, 0.78, 0.78, hit_w * 0.9)
+		else:
+			_pose_overlay.texture = null
+			_pose_overlay.modulate.a = 0.0
+			sp.scale = sp.scale.lerp(_saved_sprite_scale * Vector2(1.02, 0.96), hit_w * 0.35)
+	elif atk_w > 0.01:
+		_hit_knock_offset = _hit_knock_offset.lerp(Vector2.ZERO, 1.0 - exp(-delta * 14.0))
+		var aim := _get_weapon_aim_dir()
+		if not _portrait_motion_locked() and aim.length_squared() > 0.0004:
+			sp.offset += aim.normalized() * 2.8 * atk_w
+		if _tex_attack != null:
+			_pose_overlay.texture = _tex_attack
+			_pose_overlay.region_enabled = false
+			_pose_overlay.modulate = Color(1.0, 1.0, 1.0, atk_w * 0.86)
+		else:
+			_pose_overlay.texture = null
+			_pose_overlay.modulate.a = 0.0
+		var atk_sx := _saved_sprite_scale.x * lerpf(1.0, 1.018, atk_w)
+		var atk_sy := _saved_sprite_scale.y * lerpf(1.0, 0.982, atk_w)
+		sp.scale = sp.scale.lerp(Vector2(atk_sx, atk_sy), atk_w * 0.32)
+	else:
+		_pose_overlay.texture = null
+		_pose_overlay.modulate.a = 0.0
+		_hit_knock_offset = _hit_knock_offset.lerp(Vector2.ZERO, 1.0 - exp(-delta * 12.0))
+
+
+func _finish_sprite_visual(sp: Sprite2D, delta: float) -> void:
+	_apply_pose_sprite_fx(sp, delta)
+	_tick_dash_sprite_fx(sp, delta)
 
 
 ## 投掷/弹道视觉共用：手上武器子节点世界坐标（与 WeaponSystem._weapon_fire_origin 对齐）
@@ -654,7 +850,10 @@ func _update_player_sprite(delta: float) -> void:
 				aim_v = weapon_system.call("get_auto_weapon_aim_dir", global_position) as Vector2
 			if aim_v.length_squared() < 0.0004:
 				aim_v = InputManager.get_aim_direction(global_position)
-			body_rig.apply_visual_state(delta, velocity, is_dead, _pose_hit_t > 0.0, _pose_attack_t > 0.0, aim_v, _last_horiz_facing)
+			body_rig.apply_visual_state(
+				delta, velocity, is_dead, _pose_hit_blend(), _pose_attack_blend(),
+				aim_v, _last_horiz_facing, _dash_active, _dash_dir
+			)
 			return
 	if _tex_idle == null:
 		return
@@ -674,37 +873,6 @@ func _update_player_sprite(delta: float) -> void:
 	if fidelity_mode_enabled:
 		var moving_u := clampf(velocity.length() / 220.0, 0.0, 1.0)
 		_fidelity_motion_blend = lerpf(_fidelity_motion_blend, moving_u, 0.12)
-	if _pose_hit_t > 0.0 and _tex_hit != null:
-		sp.texture = _tex_hit
-		sp.region_enabled = false
-		sp.offset = Vector2.ZERO
-		if fidelity_mode_enabled:
-			sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.22)
-		else:
-			var hit_sy := _saved_sprite_scale.y * 0.985
-			sp.scale = sp.scale.lerp(Vector2(_saved_sprite_scale.x, hit_sy), 0.28)
-		_apply_sprite_topdown_facing(sp, velocity)
-		return
-	if _pose_attack_t > 0.0 and _tex_attack != null:
-		sp.texture = _tex_attack
-		sp.region_enabled = false
-		sp.offset = Vector2.ZERO
-		var aim := Vector2.ZERO
-		if weapon_system != null and weapon_system.has_method("get_auto_weapon_aim_dir"):
-			aim = weapon_system.call("get_auto_weapon_aim_dir", global_position) as Vector2
-		if aim.length_squared() < 0.0004:
-			aim = InputManager.get_aim_direction(global_position)
-		var fd := velocity
-		if aim.length_squared() > 0.0004:
-			fd = aim * 220.0
-		if fidelity_mode_enabled:
-			sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.22)
-		else:
-			var atk_sx := _saved_sprite_scale.x * 1.01
-			var atk_sy := _saved_sprite_scale.y * 0.985
-			sp.scale = sp.scale.lerp(Vector2(atk_sx, atk_sy), 0.26)
-		_apply_sprite_topdown_facing(sp, fd)
-		return
 	if _tex_turn_strip != null and not fidelity_mode_enabled:
 		var moving_turn := velocity.length() > _RUN_ANIM_MIN_SPEED
 		if moving_turn:
@@ -726,6 +894,7 @@ func _update_player_sprite(delta: float) -> void:
 			var sy := _saved_sprite_scale.y * lerpf(1.0, 0.90, speed_u)
 			sp.scale = sp.scale.lerp(Vector2(sx, sy), 0.18)
 			_apply_sprite_topdown_facing(sp, velocity)
+			_finish_sprite_visual(sp, delta)
 			return
 		sp.texture = _tex_idle
 		sp.region_enabled = false
@@ -736,19 +905,45 @@ func _update_player_sprite(delta: float) -> void:
 		sp.offset.x = lerpf(sp.offset.x, 0.0, 0.22)
 		sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.2)
 		_apply_sprite_topdown_facing(sp, velocity)
+		_finish_sprite_visual(sp, delta)
 		return
 	if fidelity_mode_enabled:
-		# 保形模式：移动时不切跑步帧，仅做微弱位移/呼吸，确保观感稳定。
-		sp.texture = _tex_idle
-		sp.region_enabled = false
 		var move_u := clampf(velocity.length() / 220.0, 0.0, 1.0)
-		_idle_breath_t += delta * lerpf(1.1, 1.6, move_u)
-		var breath_f := sin(_idle_breath_t * 1.8) * lerpf(0.06, 0.12, move_u)
-		sp.offset.y = lerpf(sp.offset.y, breath_f, 0.14)
-		var glide_x := clampf(velocity.x * 0.0016, -0.55, 0.55)
-		sp.offset.x = lerpf(sp.offset.x, glide_x, 0.12)
-		sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.18)
+		_idle_breath_t += delta * lerpf(1.0, 1.55, move_u)
+		if _external_portrait_sprite:
+			sp.texture = _tex_idle
+			sp.region_enabled = false
+			_apply_external_portrait_motion(sp, delta)
+			_apply_sprite_topdown_facing(sp, velocity)
+			_finish_sprite_visual(sp, delta)
+			return
+		if _tex_run_strip != null and velocity.length() > _RUN_ANIM_MIN_SPEED and _fidelity_motion_blend > 0.06:
+			sp.texture = _tex_run_strip
+			sp.region_enabled = true
+			var step_mul := clampf(velocity.length() / 175.0, 0.55, 1.15)
+			_run_anim_accum += delta * _RUN_ANIM_FPS * step_mul * lerpf(0.62, 1.0, _fidelity_motion_blend)
+			var fi: int = int(_run_anim_accum) % 3
+			sp.region_rect = Rect2(float(fi * _run_frame_w), 0.0, float(_run_frame_w), float(_run_frame_h))
+			var bob_raw_f := sin(_run_anim_accum * PI) * 0.2 * _fidelity_motion_blend
+			_bob_smoothed = lerpf(_bob_smoothed, bob_raw_f, 0.15)
+			sp.offset.y = lerpf(sp.offset.y, _bob_smoothed, 0.13)
+			var lean_x_f := clampf(velocity.x * 0.0018, -0.55, 0.55)
+			sp.offset.x = lerpf(sp.offset.x, lean_x_f, 0.11)
+			var sx2f := _saved_sprite_scale.x * lerpf(1.0, 1.01, _fidelity_motion_blend)
+			var sy2f := _saved_sprite_scale.y * lerpf(1.0, 0.99, _fidelity_motion_blend)
+			sp.scale = sp.scale.lerp(Vector2(sx2f, sy2f), 0.1)
+		else:
+			sp.texture = _tex_idle
+			sp.region_enabled = false
+			_run_anim_accum = lerpf(_run_anim_accum, 0.0, 0.18)
+			_bob_smoothed = lerpf(_bob_smoothed, 0.0, 0.2)
+			var breath_f := sin(_idle_breath_t * 1.8) * lerpf(0.05, 0.1, move_u)
+			sp.offset.y = lerpf(sp.offset.y, breath_f + _bob_smoothed, 0.13)
+			var glide_x := clampf(velocity.x * 0.0014, -0.45, 0.45)
+			sp.offset.x = lerpf(sp.offset.x, glide_x, 0.1)
+			sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.16)
 		_apply_sprite_topdown_facing(sp, velocity)
+		_finish_sprite_visual(sp, delta)
 		return
 	if _tex_run_strip != null:
 		var moving := velocity.length() > _RUN_ANIM_MIN_SPEED
@@ -781,6 +976,7 @@ func _update_player_sprite(delta: float) -> void:
 				var sy2 := _saved_sprite_scale.y * lerpf(1.0, 0.95, speed_u2)
 				sp.scale = sp.scale.lerp(Vector2(sx2, sy2), 0.18)
 			_apply_sprite_topdown_facing(sp, velocity)
+			_finish_sprite_visual(sp, delta)
 			return
 		sp.texture = _tex_idle
 		sp.region_enabled = false
@@ -792,6 +988,7 @@ func _update_player_sprite(delta: float) -> void:
 		sp.offset.x = lerpf(sp.offset.x, 0.0, 0.16 if fidelity_mode_enabled else 0.22)
 		sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.2)
 		_apply_sprite_topdown_facing(sp, velocity)
+		_finish_sprite_visual(sp, delta)
 		return
 	sp.texture = _tex_idle
 	sp.region_enabled = false
@@ -801,6 +998,7 @@ func _update_player_sprite(delta: float) -> void:
 	sp.offset.y = breath2
 	sp.scale = sp.scale.lerp(_saved_sprite_scale, 0.2)
 	_apply_sprite_topdown_facing(sp, velocity)
+	_finish_sprite_visual(sp, delta)
 
 func _process(delta: float) -> void:
 	if is_dead:
@@ -878,32 +1076,10 @@ func _process(delta: float) -> void:
 	_clamp_to_viewport()
 	_apply_hp_growth()
 	_apply_invuln_modulate()
-	_update_camera_follow(delta)
 	_update_player_sprite(delta)
 	_sync_depth_shadow()
 	_sync_energy_edge()
 	_update_weapon_hand_mount()
-
-func _update_camera_follow(delta: float) -> void:
-	if camera == null:
-		return
-	if not ("position_smoothing_enabled" in camera):
-		return
-	# 动态平滑：低速更“稳”，高速/冲刺更“跟手”（对标竞品“高级跟随感”）
-	var spd := velocity.length()
-	var target := 9.5
-	target = lerpf(9.5, 16.0, clampf(spd / 320.0, 0.0, 1.0))
-	if _dash_active:
-		target = maxf(target, 18.0)
-	var edge_p := _edge_proximity()
-	if edge_p > 0.0:
-		# 贴边时略稳，减少“冲刺撞边+平滑拉扯”带来的镜头抽动。
-		target = lerpf(target, 9.4, edge_p)
-	if Settings.reduce_screen_motion:
-		target = minf(target, 11.5)
-	_cam_smooth_speed = lerpf(_cam_smooth_speed, target, 1.0 - exp(-delta * 10.0))
-	camera.position_smoothing_enabled = true
-	camera.position_smoothing_speed = _cam_smooth_speed
 
 func _handle_movement(delta: float) -> void:
 	var move_bonus := 0.0
@@ -912,6 +1088,7 @@ func _handle_movement(delta: float) -> void:
 	
 	var target_speed := move_speed * (1.0 + move_bonus) * _kill_momentum_mul
 	target_speed *= _archetype_move_speed_mul
+	target_speed *= _map_move_mul
 	var gp := get_parent()
 	if gp != null and gp.has_method("get_curse_move_speed_mul"):
 		target_speed *= float(gp.call("get_curse_move_speed_mul"))
@@ -931,16 +1108,21 @@ func _handle_movement(delta: float) -> void:
 		velocity = velocity.lerp(Vector2.ZERO, kb)
 		if velocity.length() < _VEL_STOP_EPS:
 			velocity = Vector2.ZERO
+	# 地图场拉力：即使站桩也会被推/吸，强制改变走位
+	if _map_pull_vel.length_squared() > 0.01:
+		velocity += _map_pull_vel
 	
 	global_position += velocity * delta
 	if velocity.length() > 12.0 and absf(velocity.x) > 3.5:
 		_last_horiz_facing = signf(velocity.x)
 
 func _clamp_to_viewport() -> void:
-	var min_x := -_ARENA_HALF_W + _PLAYER_BOUND_MARGIN
-	var max_x := _ARENA_HALF_W - _PLAYER_BOUND_MARGIN
-	var min_y := -_ARENA_HALF_H + _PLAYER_BOUND_MARGIN
-	var max_y := _ARENA_HALF_H - _PLAYER_BOUND_MARGIN
+	if GameDB.UNLIMITED_WORLD_MOVEMENT:
+		return
+	var min_x := -GameDB.ARENA_HALF_W + GameDB.PLAYER_BOUND_MARGIN
+	var max_x := GameDB.ARENA_HALF_W - GameDB.PLAYER_BOUND_MARGIN
+	var min_y := -GameDB.ARENA_HALF_H + GameDB.PLAYER_BOUND_MARGIN
+	var max_y := GameDB.ARENA_HALF_H - GameDB.PLAYER_BOUND_MARGIN
 	var prev := global_position
 	global_position.x = clampf(global_position.x, min_x, max_x)
 	global_position.y = clampf(global_position.y, min_y, max_y)
@@ -959,16 +1141,6 @@ func _clamp_to_viewport() -> void:
 		_dash_timer = 0.0
 		_dash_cooldown = maxf(_dash_cooldown, GameDB.DASH_COOLDOWN * 0.85 * _dash_cooldown_mul)
 
-
-func _edge_proximity() -> float:
-	var min_x := -_ARENA_HALF_W + _PLAYER_BOUND_MARGIN
-	var max_x := _ARENA_HALF_W - _PLAYER_BOUND_MARGIN
-	var min_y := -_ARENA_HALF_H + _PLAYER_BOUND_MARGIN
-	var max_y := _ARENA_HALF_H - _PLAYER_BOUND_MARGIN
-	var dx := minf(absf(global_position.x - min_x), absf(max_x - global_position.x))
-	var dy := minf(absf(global_position.y - min_y), absf(max_y - global_position.y))
-	var d := minf(dx, dy)
-	return clampf(1.0 - d / _EDGE_SOFT_ZONE, 0.0, 1.0)
 
 # 唯一伤害入口：敌人通过此方法造成伤害
 # EnemyManager/BOSS 直接调用此方法而非通过信号
@@ -1026,15 +1198,7 @@ func take_damage(amount: float) -> void:
 	hp -= actual_damage
 	_pose_hit_t = _POSE_HIT_SEC
 	_pose_attack_t = 0.0
-	
-	# 吸血效果
-	var lifesteal := 0.0
-	if skill_system and skill_system.stats.has("lifesteal"):
-		lifesteal = float(skill_system.stats["lifesteal"])
-	
-	if lifesteal > 0 and actual_damage > 0:
-		var heal_amount := actual_damage * lifesteal
-		heal(heal_amount)
+	_hit_knock_dir = _estimate_hit_direction()
 	
 	# 发射实际伤害事件（仅一次，供HUD/统计使用）
 	EventBus.player_damaged.emit(actual_damage)
@@ -1067,6 +1231,18 @@ func heal(amount: float) -> void:
 	
 	if healed > 0:
 		EventBus.player_healed.emit(healed)
+
+
+## 造成伤害时触发吸血（由 EnemyManager / WeaponSystem 在结算后调用）
+func apply_lifesteal_from_damage(dealt: float) -> void:
+	if is_dead or dealt <= 0.0:
+		return
+	var lifesteal := 0.0
+	if skill_system and skill_system.stats.has("lifesteal"):
+		lifesteal = float(skill_system.stats["lifesteal"])
+	if lifesteal <= 0.0:
+		return
+	heal(dealt * lifesteal)
 
 func _die() -> void:
 	is_dead = true
