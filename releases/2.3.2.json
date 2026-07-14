@@ -2,8 +2,8 @@
 	"ok": true,
 	"status": "ok",
 	"version": "2.3.2",
-	"releasedAt": "2026-07-14T14:12:26.898Z",
-	"notes": "CLI Godot export verified with desktop Godot 4.6.2",
+	"releasedAt": "2026-07-14T14:18:33.506Z",
+	"notes": "CLI Godot export path verified",
 	"channel": "stable",
 	"app": "game"
 }
