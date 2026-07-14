@@ -27,7 +27,24 @@
 
 ---
 
+## 作品集发版（CLI）
+
+本机 Godot：`E:\Desktop\Godot_v4.6.2-stable_win64.exe`（或环境变量 `GODOT_EXE`）。需已安装 **Web 导出模板**。
+
+```powershell
+# 工作区根目录
+cd e:\Desktop\Ai
+.\release.ps1 -Project game -Version 2.4.0 -Notes "更新说明"
+```
+
+- `build/` **不进 Git**；Git Deploy Hook  alone 不会生成新的 Web 包
+- 仅导出：`.\tools\export_web.ps1`
+- 门户路由：`/game/` → Vercel 项目 `shell-survivor`
+
+---
+
 ## 游戏机制
+
 
 ### 武器系统（11种）
 | 武器 | 特色 | 进化效果 |
