@@ -1,0 +1,9 @@
+{
+	"ok": true,
+	"status": "ok",
+	"version": "2.3.1",
+	"releasedAt": "2026-07-14T13:54:05.766Z",
+	"notes": "CMS sync",
+	"channel": "stable",
+	"app": "game"
+}

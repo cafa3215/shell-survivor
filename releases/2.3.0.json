@@ -1,0 +1,9 @@
+{
+	"ok": true,
+	"status": "ok",
+	"version": "2.3.0",
+	"releasedAt": "2026-07-14T09:46:17.766Z",
+	"notes": "当前线上版本",
+	"channel": "stable",
+	"app": "game"
+}
